@@ -1,0 +1,13 @@
+# Dependencies
+node_modules/
+
+# VS Code Workspace Files
+*.code-workspace
+
+# Environment / Secrets / Temorary Files
+.env
+.env.*
+!.env.example
+
+/.temp/
+.archive

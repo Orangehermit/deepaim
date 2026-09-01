@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Point Shoot Prototype</title>
+<style>
+  html, body { margin:0; padding:0; overflow:hidden; background:#0a0a0f; height:100%; }
+  #info {
+    position:absolute; top:16px; left:0; width:100%; text-align:center;
+    color:#ddd; font-family:sans-serif; font-size:14px; z-index:1; pointer-events:none;
+  }
+  #enterVR {
+    position:absolute; bottom:24px; left:50%; transform:translateX(-50%);
+    padding:12px 28px; border:none; border-radius:6px;
+    background:#3a6; color:#fff; font-size:16px; font-family:sans-serif;
+    cursor:pointer; z-index:2;
+  }
+  #enterVR:disabled { background:#555; cursor:default; }
+</style>
+</head>
+<body>
+<div id="info">Questのブラウザで開いて「ENTER VR」を押してください</div>
+<button id="enterVR">ENTER VR</button>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/128/three.min.js"></script>
+<script>
+// ---- 最小構成: ピストル / 発砲 / 標的 の3要素だけ ----
+
+let scene, camera, renderer;
+let controller;
+let raycaster = new THREE.Raycaster();
+let tempMatrix = new THREE.Matrix4();
+let targets = [];
+let score = 0;
+
+init();
+
+function init() {
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0a0a12);
+
+  camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 50);
+
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x222233, 1.2));
+
+  const floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(10, 10),
+    new THREE.MeshStandardMaterial({ color: 0x1a1a22 })
+  );
+  floor.rotation.x = -Math.PI / 2;
+  scene.add(floor);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.xr.enabled = true;
+  document.body.appendChild(renderer.domElement);
+
+  // --- ピストル: controllerにアタッチした単純なメッシュ ---
+  controller = renderer.xr.getController(0); // 片手分。逆手対応は getController(1) を同様に足せば良い
+  controller.addEventListener('selectstart', onFire); // トリガーで発砲
+  scene.add(controller);
+
+  const gun = new THREE.Mesh(
+    new THREE.BoxGeometry(0.03, 0.06, 0.2),
+    new THREE.MeshStandardMaterial({ color: 0x333333 })
+  );
+  gun.position.set(0, -0.02, -0.06);
+  controller.add(gun);
+
+  // --- 標的: 撃たれたら消えて再スポーンする球 ---
+  spawnTarget();
+  spawnTarget();
+  spawnTarget();
+
+  setupVRButton();
+  window.addEventListener('resize', onResize);
+  renderer.setAnimationLoop(() => renderer.render(scene, camera));
+}
+
+function setupVRButton() {
+  const btn = document.getElementById('enterVR');
+  if (!navigator.xr) {
+    btn.textContent = 'このブラウザはWebXR非対応';
+    btn.disabled = true;
+    return;
+  }
+  navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
+    if (!supported) {
+      btn.textContent = 'immersive-vr非対応';
+      btn.disabled = true;
+    }
+  });
+  btn.addEventListener('click', () => {
+    navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor'] })
+      .then((session) => {
+        session.addEventListener('end', () => renderer.xr.setSession(null));
+        renderer.xr.setSession(session);
+        document.getElementById('info').style.display = 'none';
+        btn.style.display = 'none';
+      })
+      .catch((err) => alert('VRセッション開始に失敗: ' + err.message));
+  });
+}
+
+// --- 発砲: コントローラーの位置・向きからレイを飛ばす(=ポイントシューティング。照準器は出さない) ---
+function onFire() {
+  tempMatrix.identity().extractRotation(controller.matrixWorld);
+  raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+  raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+
+  const hits = raycaster.intersectObjects(targets);
+  if (hits.length > 0) {
+    const hitTarget = hits[0].object;
+    scene.remove(hitTarget);
+    targets = targets.filter((t) => t !== hitTarget);
+    score++;
+    console.log('HIT! score =', score);
+    spawnTarget();
+  } else {
+    console.log('MISS');
+  }
+
+  // 簡易ハプティクス(対応コントローラーのみ)
+  const src = controller.userData.inputSource;
+  const gp = src && src.gamepad;
+  if (gp && gp.hapticActuators && gp.hapticActuators[0]) {
+    gp.hapticActuators[0].pulse(0.6, 60);
+  }
+}
+
+function spawnTarget() {
+  const target = new THREE.Mesh(
+    new THREE.SphereGeometry(0.15, 16, 16),
+    new THREE.MeshStandardMaterial({ color: 0xdd3333 })
+  );
+  target.position.set(
+    (Math.random() - 0.5) * 3,
+    1 + Math.random() * 1.2,
+    -1.8 - Math.random() * 2
+  );
+  scene.add(target);
+  targets.push(target);
+}
+
+function onResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+// inputSourceをuserDataに保持(ハプティクス取得用)
+window.addEventListener('load', () => {
+  renderer.xr.addEventListener('sessionstart', () => {
+    const session = renderer.xr.getSession();
+    session.addEventListener('inputsourceschange', () => {
+      session.inputSources.forEach((src, i) => {
+        const c = renderer.xr.getController(i);
+        c.userData.inputSource = src;
+      });
+    });
+  });
+});
+</script>
+</body>
+</html>
