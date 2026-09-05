@@ -1,976 +1,677 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8">
-
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1"
-    >
-
-    <title>Deep Aim</title>
-
-    <style>
-        html,
-        body {
-            margin: 0;
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-            background: #050509;
-            font-family: Arial, sans-serif;
-        }
-
-        #status {
-            position: fixed;
-            top: 16px;
-            left: 50%;
-            transform: translateX(-50%);
-
-            color: white;
-            background: rgba(0, 0, 0, 0.65);
-
-            padding: 10px 16px;
-            border-radius: 8px;
-
-            font-size: 16px;
-
-            z-index: 10;
-
-            pointer-events: none;
-        }
-    </style>
-
-    <script type="importmap">
-    {
-        "imports": {
-            "three":
-                "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
-
-            "three/addons/":
-                "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
-        }
-    }
-    </script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deep Aim — Gun Test 4 (real model + settings + firing)</title>
+<style>
+  html, body { margin: 0; padding: 0; overflow: hidden; background: #050505; }
+  #info {
+    position: absolute; top: 10px; left: 10px; z-index: 10;
+    color: #cfe8ff; font-family: sans-serif; font-size: 13px; line-height: 1.5;
+    background: rgba(0,0,0,0.45); padding: 8px 12px; border-radius: 6px;
+    max-width: 380px;
+  }
+  #status { margin-top: 6px; color: #9cff9c; white-space: pre-line; }
+</style>
 </head>
-
 <body>
-
-    <div id="status">
-        Deep Aim loading...
-    </div>
-
-    <script type="module">
-
-        import * as THREE from "three";
-        import { VRButton }
-            from "three/addons/webxr/VRButton.js";
-
-
-        // ============================================================
-        // BASIC SETUP
-        // ============================================================
-
-        const status = document.getElementById("status");
-
-        status.textContent = "Initializing Deep Aim...";
-
-
-        const scene = new THREE.Scene();
-
-        scene.background =
-            new THREE.Color(0x050509);
-
-
-        const camera =
-            new THREE.PerspectiveCamera(
-                70,
-                window.innerWidth / window.innerHeight,
-                0.01,
-                100
-            );
-
-
-        const renderer =
-            new THREE.WebGLRenderer({
-                antialias: true
-            });
-
-
-        renderer.setPixelRatio(
-            window.devicePixelRatio
-        );
-
-
-        renderer.setSize(
-            window.innerWidth,
-            window.innerHeight
-        );
-
-
-        renderer.xr.enabled = true;
-
-
-        document.body.appendChild(
-            renderer.domElement
-        );
-
-
-        // ============================================================
-        // VR BUTTON
-        // ============================================================
-
-        document.body.appendChild(
-
-            VRButton.createButton(
-                renderer,
-                {
-                    optionalFeatures: [
-                        "local-floor"
-                    ]
-                }
-            )
-
-        );
-
-
-        status.textContent =
-            "Ready. Press ENTER VR.";
-
-
-        // ============================================================
-        // LIGHTING
-        // ============================================================
-
-        const hemisphereLight =
-            new THREE.HemisphereLight(
-                0xffffff,
-                0x202030,
-                2
-            );
-
-
-        scene.add(
-            hemisphereLight
-        );
-
-
-        // ============================================================
-        // FLOOR
-        // ============================================================
-
-        const floor =
-            new THREE.Mesh(
-
-                new THREE.PlaneGeometry(
-                    20,
-                    20
-                ),
-
-                new THREE.MeshStandardMaterial({
-                    color: 0x181820,
-                    roughness: 0.9
-                })
-
-            );
-
-
-        floor.rotation.x =
-            -Math.PI / 2;
-
-
-        scene.add(
-            floor
-        );
-
-
-        // ============================================================
-        // TARGETS
-        // ============================================================
-
-        const targets = [];
-
-
-        function createTarget(
-            x,
-            y,
-            z
-        ) {
-
-            const geometry =
-                new THREE.SphereGeometry(
-                    0.15,
-                    24,
-                    24
-                );
-
-
-            const material =
-                new THREE.MeshStandardMaterial({
-                    color: 0xff3030,
-                    emissive: 0x220000,
-                    roughness: 0.5
-                });
-
-
-            const target =
-                new THREE.Mesh(
-                    geometry,
-                    material
-                );
-
-
-            target.position.set(
-                x,
-                y,
-                z
-            );
-
-
-            scene.add(
-                target
-            );
-
-
-            targets.push(
-                target
-            );
-
-        }
-
-
-        createTarget(
-            -0.8,
-            1.5,
-            -3
-        );
-
-
-        createTarget(
-            0,
-            1.7,
-            -3.5
-        );
-
-
-        createTarget(
-            0.9,
-            1.3,
-            -2.5
-        );
-
-
-        // ============================================================
-        // GUN MODEL (プリミティブのみ。1回だけ組み立てて、
-        // 後から「どのcontrollerに付けるか」を動的に切り替える)
-        // ============================================================
-
-        const BARREL_LENGTH = 0.22; // 長銃身寄りだが現実的な範囲に短縮(旧: 0.42)
-
-        // 「仮想的な直線的バレル」の傾き(縦・横)。
-        // 見た目がどれだけオーガニック/歪んだ銃であっても、
-        // 弾道は常にこの"仮想インナーバレル"の軸に沿って直進する、
-        // という前提の角度。現状のリボルバーはまっすぐなので0だが、
-        // 将来のモデルではここを調整して弾道を意図的に傾けられる。
-        const BARREL_PITCH = 0; // 上下方向の傾き(ラジアン)。正で上向き想定、実機で符号を確認
-        const BARREL_YAW = 0;   // 左右方向の傾き(ラジアン)。正で右向き想定、実機で符号を確認
-
-        function buildGun() {
-
-            const gunMetal =
-                new THREE.MeshStandardMaterial({
-                    color: 0x1c1c20,
-                    roughness: 0.55,
-                    metalness: 0.4
-                });
-
-
-            const gripMaterial =
-                new THREE.MeshStandardMaterial({
-                    color: 0x2a2622,
-                    roughness: 0.85
-                });
-
-
-            const gun =
-                new THREE.Group();
-
-
-            // --- Grip ---
-
-            const grip =
-                new THREE.Mesh(
-
-                    new THREE.BoxGeometry(
-                        0.042,
-                        0.13,
-                        0.05
-                    ),
-
-                    gripMaterial
-
-                );
-
-
-            grip.position.set(
-                0,
-                -0.06,
-                0.035
-            );
-
-
-            grip.rotation.x =
-                -0.35;
-
-
-            gun.add(
-                grip
-            );
-
-
-            // --- Frame ---
-
-            const frame =
-                new THREE.Mesh(
-
-                    new THREE.BoxGeometry(
-                        0.045,
-                        0.05,
-                        0.09
-                    ),
-
-                    gunMetal
-
-                );
-
-
-            frame.position.set(
-                0,
-                0.012,
-                -0.03
-            );
-
-
-            gun.add(
-                frame
-            );
-
-
-            // --- Cylinder (軸を銃身と平行にしたリボルバーの弾倉) ---
-
-            const CYLINDER_Z = -0.10;
-            const CYLINDER_LENGTH = 0.055;
-
-            const cylinder =
-                new THREE.Mesh(
-
-                    new THREE.CylinderGeometry(
-                        0.034,
-                        0.034,
-                        CYLINDER_LENGTH,
-                        20
-                    ),
-
-                    gunMetal
-
-                );
-
-
-            cylinder.rotation.x =
-                Math.PI / 2;
-
-
-            cylinder.position.set(
-                0,
-                0.025,
-                CYLINDER_Z
-            );
-
-
-            gun.add(
-                cylinder
-            );
-
-
-            // --- Barrel Assembly ---
-            //
-            // barrel(見た目)・muzzleCap(見た目)・muzzle(発射基準点)を
-            // 1つのGroupにまとめ、このGroup自体にBARREL_PITCH/YAWを
-            // かける。見た目のバレルと発射軸が常に同じ回転の上に乗る
-            // ことになるので、「見た目はまっすぐなのに弾は斜めに飛ぶ」
-            // という矛盾が構造的に起こり得なくなる。
-            // グリップ/フレーム/シリンダーは傾けず、この
-            // barrelAssemblyだけが独立して傾く(=「握り方」と
-            // 「仮想的な直線バレルの軸」を別物として扱う設計)。
-
-            const BARREL_PIVOT_Z =
-                CYLINDER_Z
-                - (CYLINDER_LENGTH / 2); // バレルの根本(支点)
-
-            const barrelAssembly =
-                new THREE.Group();
-
-
-            barrelAssembly.position.set(
-                0,
-                0.025,
-                BARREL_PIVOT_Z
-            );
-
-
-            barrelAssembly.rotation.set(
-                BARREL_PITCH,
-                BARREL_YAW,
-                0
-            );
-
-
-            gun.add(
-                barrelAssembly
-            );
-
-
-            // 以下、barrelAssembly内のローカル座標(支点からの相対位置)
-
-            const barrel =
-                new THREE.Mesh(
-
-                    new THREE.CylinderGeometry(
-                        0.013,
-                        0.016,
-                        BARREL_LENGTH,
-                        16
-                    ),
-
-                    gunMetal
-
-                );
-
-
-            barrel.rotation.x =
-                Math.PI / 2; // CylinderGeometryの向きを前方に直すだけの下ごしらえ
-
-
-            barrel.position.set(
-                0,
-                0,
-                -BARREL_LENGTH / 2
-            );
-
-
-            barrelAssembly.add(
-                barrel
-            );
-
-
-            // --- Muzzle cap(見た目) ---
-
-            const muzzleCap =
-                new THREE.Mesh(
-
-                    new THREE.CylinderGeometry(
-                        0.014,
-                        0.014,
-                        0.01,
-                        16
-                    ),
-
-                    new THREE.MeshStandardMaterial({
-                        color: 0x333333,
-                        roughness: 0.4
-                    })
-
-                );
-
-
-            muzzleCap.rotation.x =
-                Math.PI / 2;
-
-
-            muzzleCap.position.set(
-                0,
-                0,
-                -BARREL_LENGTH
-            );
-
-
-            barrelAssembly.add(
-                muzzleCap
-            );
-
-
-            // --- Muzzle: レイの発射基準点(見た目には出さないObject3D) ---
-            //
-            // barrelAssemblyの子なので、傾きはbarrelメッシュと完全に
-            // 同じもの(=barrelAssembly.rotation)を自動的に継承する。
-            // ここ自体には独自の回転は持たせない。
-
-            const muzzle =
-                new THREE.Object3D();
-
-
-            muzzle.position.set(
-                0,
-                0,
-                -BARREL_LENGTH
-            );
-
-
-            barrelAssembly.add(
-                muzzle
-            );
-
-
-            return {
-                group: gun,
-                muzzle: muzzle
-            };
-
-        }
-
-
-        const {
-            group: gun,
-            muzzle
-        } = buildGun();
-
-
-        // ============================================================
-        // CONTROLLERS
-        //
-        // getController(0) は必ずしも右手とは限らない。
-        // connectedイベントの inputSource.handedness を見て、
-        // "right" のコントローラーに銃を動的に付け替える。
-        // ============================================================
-
-        const controllerA =
-            renderer.xr.getController(0);
-
-        const controllerB =
-            renderer.xr.getController(1);
-
-
-        scene.add(
-            controllerA
-        );
-
-
-        scene.add(
-            controllerB
-        );
-
-
-        let gunController = null;
-
-
-        function attachGun(
-            controller
-        ) {
-
-            if (
-                gunController === controller
-            ) return;
-
-
-            if (
-                gunController
-            ) {
-
-                gunController.removeEventListener(
-                    "selectstart",
-                    shoot
-                );
-
-            }
-
-
-            controller.add(
-                gun
-            ); // add()は自動で以前の親から外してくれる
-
-
-            controller.addEventListener(
-                "selectstart",
-                shoot
-            );
-
-
-            gunController = controller;
-
-        }
-
-
-        function onControllerConnected(
-            event,
-            controller
-        ) {
-
-            const handedness =
-                event.data
-                && event.data.handedness;
-
-
-            if (
-                handedness === "right"
-            ) {
-
-                attachGun(
-                    controller
-                );
-
-            }
-
-        }
-
-
-        controllerA.addEventListener(
-            "connected",
-            (event) =>
-                onControllerConnected(
-                    event,
-                    controllerA
-                )
-        );
-
-
-        controllerB.addEventListener(
-            "connected",
-            (event) =>
-                onControllerConnected(
-                    event,
-                    controllerB
-                )
-        );
-
-
-        // ============================================================
-        // SHOOTING
-        //
-        // getWorldDirection()の符号の記憶が曖昧だったため、以前の
-        // 箱銃版で確実に動いていた「matrixWorldから回転行列を抽出して
-        // (0,0,-1)を掛ける」方式に戻す。基準をcontrollerからmuzzleに
-        // 変えているだけで、計算方法自体は動作実績のあるものを踏襲する。
-        // ============================================================
-
-        const raycaster =
-            new THREE.Raycaster();
-
-
-        const direction =
-            new THREE.Vector3();
-
-
-        const origin =
-            new THREE.Vector3();
-
-
-        const rotationMatrix =
-            new THREE.Matrix4();
-
-
-        const tracerMaterial =
-            new THREE.LineBasicMaterial({
-                color: 0xffff00
-            });
-
-
-        let score = 0;
-
-
-        function createTracer(
-            start,
-            end
-        ) {
-
-            const geometry =
-                new THREE.BufferGeometry()
-                    .setFromPoints([
-                        start,
-                        end
-                    ]);
-
-
-            const tracer =
-                new THREE.Line(
-                    geometry,
-                    tracerMaterial
-                );
-
-
-            scene.add(
-                tracer
-            );
-
-
-            setTimeout(
-                () => {
-
-                    scene.remove(
-                        tracer
-                    );
-
-
-                    geometry.dispose();
-
-                },
-                150
-            );
-
-        }
-
-
-        function shoot() {
-
-            muzzle.updateMatrixWorld(
-                true
-            );
-
-
-            origin.setFromMatrixPosition(
-                muzzle.matrixWorld
-            );
-
-
-            rotationMatrix
-                .extractRotation(
-                    muzzle.matrixWorld
-                );
-
-
-            direction
-                .set(
-                    0,
-                    0,
-                    -1
-                )
-                .applyMatrix4(
-                    rotationMatrix
-                )
-                .normalize();
-
-
-            raycaster.set(
-                origin,
-                direction
-            );
-
-
-            const hits =
-                raycaster.intersectObjects(
-                    targets,
-                    false
-                );
-
-
-            let tracerEnd;
-
-
-            if (
-                hits.length > 0
-            ) {
-
-                tracerEnd =
-                    hits[0].point.clone();
-
-            } else {
-
-                tracerEnd =
-                    origin
-                        .clone()
-                        .add(
-                            direction
-                                .clone()
-                                .multiplyScalar(10)
-                        );
-
-            }
-
-
-            createTracer(
-                origin.clone(),
-                tracerEnd
-            );
-
-
-            if (
-                hits.length > 0
-            ) {
-
-                const target =
-                    hits[0].object;
-
-
-                scene.remove(
-                    target
-                );
-
-
-                const index =
-                    targets.indexOf(
-                        target
-                    );
-
-
-                if (
-                    index !== -1
-                ) {
-
-                    targets.splice(
-                        index,
-                        1
-                    );
-
-                }
-
-
-                score++;
-
-
-                status.textContent =
-                    "HIT  |  Score: "
-                    + score;
-
-
-                createTarget(
-                    (Math.random() - 0.5) * 2.5,
-                    1.0 + Math.random() * 1.5,
-                    -2.0 - Math.random() * 3.0
-                );
-
-
-            } else {
-
-                status.textContent =
-                    "MISS";
-
-            }
-
-
-            fireHaptics();
-
-        }
-
-
-        // ============================================================
-        // HAPTICS
-        // ============================================================
-
-        function fireHaptics() {
-
-            const session =
-                renderer.xr.getSession();
-
-
-            if (
-                !session
-            ) return;
-
-
-            for (
-                const inputSource
-                of session.inputSources
-            ) {
-
-                if (
-                    !inputSource.gamepad
-                ) continue;
-
-
-                const actuator =
-                    inputSource
-                        .gamepad
-                        .vibrationActuator;
-
-
-                if (
-                    actuator &&
-                    actuator.playEffect
-                ) {
-
-                    actuator.playEffect(
-                        "dual-rumble",
-                        {
-                            duration: 50,
-                            strongMagnitude: 0.6,
-                            weakMagnitude: 0.3
-                        }
-                    );
-
-                }
-
-            }
-
-        }
-
-
-        // ============================================================
-        // XR STATUS
-        // ============================================================
-
-        renderer.xr.addEventListener(
-            "sessionstart",
-            () => {
-
-                status.textContent =
-                    "VR ACTIVE";
-
-            }
-        );
-
-
-        renderer.xr.addEventListener(
-            "sessionend",
-            () => {
-
-                status.textContent =
-                    "VR ENDED";
-
-            }
-        );
-
-
-        // ============================================================
-        // RESIZE
-        // ============================================================
-
-        window.addEventListener(
-            "resize",
-            () => {
-
-                camera.aspect =
-                    window.innerWidth /
-                    window.innerHeight;
-
-
-                camera.updateProjectionMatrix();
-
-
-                renderer.setSize(
-                    window.innerWidth,
-                    window.innerHeight
-                );
-
-            }
-        );
-
-
-        // ============================================================
-        // RENDER LOOP
-        // ============================================================
-
-        renderer.setAnimationLoop(
-            () => {
-
-                renderer.render(
-                    scene,
-                    camera
-                );
-
-            }
-        );
-
-
-    </script>
-
+<div id="info">
+  <b>Deep Aim — Gun Test 4</b><br>
+  ・実モデルが右手コントローラーに追従(handedness判定)<br>
+  ・右トリガー：メニューが閉じているときは発砲/開いているときはメニュー操作<br>
+  ・左コントローラーのYボタンで設定アイコン(🔫=Gun / ⚙=System)を開閉(三本線ボタンはOS予約のため使用不可)<br>
+  ・メニュー表示中は常時レーザーを隠し、コントローラーのポインタのみ表示<br>
+  ・銃の較正値はlocalStorageに銃ID別、発射速度などの開発設定は別キーでJSON保存
+  <div id="status">Loading model...</div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { VRButton } from 'three/addons/webxr/VRButton.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { ACTIVE_GUN } from './src/config/guns.js';
+import { GUN_PARAMS, DEV_PARAMS } from './src/config/settingsSchemas.js';
+import { defaultOffsets, adjustedGunParamValue } from './src/domain/settings/calibration.js';
+import { defaultDevSettings, adjustedDevSettingValue } from './src/domain/settings/devSettings.js';
+import {
+  loadGunOffsets,
+  saveGunOffsets,
+  loadDevSettings,
+  saveDevSettings,
+} from './src/browser/localStorageSettingsRepository.js';
+
+const { id: GUN_ID, displayName: GUN_DISPLAY_NAME, modelUrl: MODEL_URL } = ACTIVE_GUN;
+
+const statusEl = document.getElementById('status');
+
+const offsets = loadGunOffsets(ACTIVE_GUN);
+const devSettings = loadDevSettings();
+
+/* =========================================================
+   基本セットアップ(gun_test3.htmlを踏襲)
+   ========================================================= */
+let scene, camera, renderer;
+const clock = new THREE.Clock();
+
+function init() {
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x090b10);
+
+  camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 100);
+  camera.position.set(0, 1.6, 1.5);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.xr.enabled = true;
+  renderer.xr.setReferenceSpaceType('local-floor');
+  document.body.appendChild(renderer.domElement);
+  document.body.appendChild(VRButton.createButton(renderer));
+
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x202020, 1.6));
+  const directional = new THREE.DirectionalLight(0xffffff, 2.0);
+  directional.position.set(3, 5, 2);
+  scene.add(directional);
+
+  const floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(20, 20),
+    new THREE.MeshStandardMaterial({ color: 0x1a1d22, roughness: 0.9 })
+  );
+  floor.rotation.x = -Math.PI / 2;
+  scene.add(floor);
+  scene.add(new THREE.GridHelper(20, 20, 0x333333, 0x222222));
+
+  const target = new THREE.Mesh(
+    new THREE.BoxGeometry(0.5, 0.5, 0.08),
+    new THREE.MeshStandardMaterial({ color: 0x666666, roughness: 0.7 })
+  );
+  target.position.set(0, 1.6, -5);
+  scene.add(target);
+
+  const referenceCube = new THREE.Mesh(
+    new THREE.BoxGeometry(0.30, 0.30, 0.30),
+    new THREE.MeshStandardMaterial({
+      color: 0x4f7fff, roughness: 0.55, metalness: 0.05, transparent: true, opacity: 0.75
+    })
+  );
+  referenceCube.position.set(0.45, 1.35, -0.45);
+  scene.add(referenceCube);
+  const referenceCubeEdges = new THREE.LineSegments(
+    new THREE.EdgesGeometry(referenceCube.geometry),
+    new THREE.LineBasicMaterial({ color: 0xffffff })
+  );
+  referenceCubeEdges.position.copy(referenceCube.position);
+  scene.add(referenceCubeEdges);
+
+  setupControllers();
+  loadGunModel();
+
+  window.addEventListener('resize', onWindowResize);
+}
+
+/* =========================================================
+   コントローラー & handedness判定
+   ========================================================= */
+let controller0, controller1;
+let rightController = null;
+let leftController = null;
+let leftInputSource = null;
+let rightOffsetNode = null;
+
+function setupControllers() {
+  controller0 = renderer.xr.getController(0);
+  controller1 = renderer.xr.getController(1);
+  scene.add(controller0, controller1);
+
+  controller0.addEventListener('connected', (e) => onControllerConnected(controller0, e));
+  controller1.addEventListener('connected', (e) => onControllerConnected(controller1, e));
+  controller0.addEventListener('disconnected', () => onControllerDisconnected(controller0));
+  controller1.addEventListener('disconnected', () => onControllerDisconnected(controller1));
+
+  controller0.addEventListener('selectstart', onSelectStart);
+  controller1.addEventListener('selectstart', onSelectStart);
+}
+
+function onControllerConnected(controller, event) {
+  const handedness = event.data.handedness; // 'left' | 'right' | 'none'
+  controller.userData.handedness = handedness;
+
+  if (handedness === 'right') {
+    rightController = controller;
+    rightOffsetNode = new THREE.Group();
+    rightOffsetNode.name = 'OffsetNode';
+    controller.add(rightOffsetNode);
+    applyOffsetsToNode();
+    attachPointerRay(controller);
+
+    if (loadedGun) {
+      rightOffsetNode.add(loadedGun.gunRoot);
+    }
+  } else if (handedness === 'left') {
+    leftController = controller;
+    leftInputSource = event.data;
+    attachMenuPanel(controller);
+  }
+}
+
+function onControllerDisconnected(controller) {
+  if (controller.userData.handedness === 'right' && rightController === controller) {
+    rightController = null;
+    rightOffsetNode = null;
+  } else if (controller.userData.handedness === 'left' && leftController === controller) {
+    leftController = null;
+    leftInputSource = null;
+  }
+}
+
+/* =========================================================
+   実モデル読み込み(gun_test3.htmlの方式を踏襲)
+   ========================================================= */
+let loadedGun = null; // { gunRoot, muzzlePoint, aimPoint }
+
+function loadGunModel() {
+  const loader = new GLTFLoader();
+  loader.load(
+    MODEL_URL,
+    (gltf) => {
+      const loadedScene = gltf.scene;
+      const gunRoot = loadedScene.getObjectByName('Gun_Root');
+      if (!gunRoot) {
+        statusEl.textContent = 'ERROR: Gun_Root was not found in the GLB.';
+        console.error('Gun_Root was not found.', loadedScene);
+        return;
+      }
+      const muzzlePoint = gunRoot.getObjectByName('Muzzle_Point');
+      const aimPoint = gunRoot.getObjectByName('Aim_Point');
+      if (!muzzlePoint || !aimPoint) {
+        statusEl.textContent = 'ERROR: Muzzle_Point or Aim_Point was not found.';
+        console.error('Required marker missing:', { muzzlePoint, aimPoint, loadedScene });
+        return;
+      }
+
+      // GLB自体がグリップ位置を原点として定義しているので位置は補正しないが、
+      // スケールは開発設定のGun Scale(全銃共通)を適用する
+      gunRoot.position.set(0, 0, 0);
+      loadedGun = { gunRoot, muzzlePoint, aimPoint };
+      applyGunScale();
+
+      if (rightOffsetNode) {
+        rightOffsetNode.add(gunRoot);
+      }
+
+      statusEl.textContent =
+        'GLB loaded successfully.\n' +
+        `${GUN_DISPLAY_NAME}: Gun_Root / Muzzle_Point / Aim_Point OK\n` +
+        '左Yボタンで設定、右トリガーで発砲';
+
+      console.log('Deep Aim gun ready:', loadedGun);
+    },
+    (xhr) => {
+      statusEl.textContent = xhr.total
+        ? `Loading GLB... ${Math.round((xhr.loaded / xhr.total) * 100)}%`
+        : 'Loading GLB...';
+    },
+    (error) => {
+      statusEl.textContent = 'ERROR: Failed to load GLB.';
+      console.error('Failed to load GLB:', error);
+    }
+  );
+}
+
+function applyOffsetsToNode() {
+  if (!rightOffsetNode) return;
+  rightOffsetNode.rotation.set(
+    THREE.MathUtils.degToRad(offsets.pitch),
+    THREE.MathUtils.degToRad(offsets.yaw),
+    THREE.MathUtils.degToRad(offsets.roll)
+  );
+  rightOffsetNode.position.set(offsets.offsetX, offsets.offsetY, offsets.offsetZ);
+}
+
+function applyGunScale() {
+  if (!loadedGun) return;
+  loadedGun.gunRoot.scale.setScalar(devSettings.gunScale);
+}
+
+/* =========================================================
+   発砲ロジック(gun_test3.htmlから継承。速度は開発設定で可変)
+   ========================================================= */
+const bullets = [];
+const bulletLifetime = 3.0;
+const muzzleWorld = new THREE.Vector3();
+const aimWorld = new THREE.Vector3();
+const shotDirection = new THREE.Vector3();
+
+function fireBullet() {
+  if (!loadedGun) return;
+
+  loadedGun.muzzlePoint.getWorldPosition(muzzleWorld);
+  loadedGun.aimPoint.getWorldPosition(aimWorld);
+  shotDirection.copy(aimWorld).sub(muzzleWorld).normalize();
+
+  const bullet = new THREE.Mesh(
+    new THREE.SphereGeometry(0.012, 10, 8),
+    new THREE.MeshBasicMaterial({ color: 0xffff66 })
+  );
+  bullet.position.copy(muzzleWorld);
+  scene.add(bullet);
+
+  bullets.push({
+    mesh: bullet,
+    velocity: shotDirection.clone().multiplyScalar(devSettings.bulletSpeed),
+    age: 0
+  });
+
+  if (rightController && rightController.gamepad && rightController.gamepad.hapticActuators?.length) {
+    rightController.gamepad.hapticActuators[0].pulse(0.5, 30).catch(() => {});
+  }
+}
+
+function updateBullets(delta) {
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    const b = bullets[i];
+    b.mesh.position.addScaledVector(b.velocity, delta);
+    b.age += delta;
+    if (b.age >= bulletLifetime) {
+      scene.remove(b.mesh);
+      b.mesh.geometry.dispose();
+      b.mesh.material.dispose();
+      bullets.splice(i, 1);
+    }
+  }
+}
+
+/* =========================================================
+   Muzzle_Point→Aim_Pointの延長線(較正用の常時表示レーザー)
+   設定メニューが開いている間は非表示にする(ポインタと紛らわしいため)
+   ========================================================= */
+let laserLine = null, muzzleMarker = null, aimMarker = null;
+const laserFar = new THREE.Vector3();
+const LASER_LENGTH = 8;
+
+function ensureLaserObjects() {
+  if (laserLine) return;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+  laserLine = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0xff3030 }));
+  scene.add(laserLine);
+
+  muzzleMarker = new THREE.Mesh(new THREE.SphereGeometry(0.008, 12, 8), new THREE.MeshBasicMaterial({ color: 0x00ff00 }));
+  scene.add(muzzleMarker);
+  aimMarker = new THREE.Mesh(new THREE.SphereGeometry(0.012, 12, 8), new THREE.MeshBasicMaterial({ color: 0x00aaff }));
+  scene.add(aimMarker);
+}
+
+function updateLaser() {
+  if (!loadedGun) return;
+  ensureLaserObjects();
+
+  loadedGun.muzzlePoint.getWorldPosition(muzzleWorld);
+  loadedGun.aimPoint.getWorldPosition(aimWorld);
+  shotDirection.copy(aimWorld).sub(muzzleWorld).normalize();
+  laserFar.copy(muzzleWorld).addScaledVector(shotDirection, LASER_LENGTH);
+
+  const pos = laserLine.geometry.attributes.position.array;
+  pos[0] = muzzleWorld.x; pos[1] = muzzleWorld.y; pos[2] = muzzleWorld.z;
+  pos[3] = laserFar.x;    pos[4] = laserFar.y;    pos[5] = laserFar.z;
+  laserLine.geometry.attributes.position.needsUpdate = true;
+  laserLine.geometry.computeBoundingSphere();
+
+  muzzleMarker.position.copy(muzzleWorld);
+  aimMarker.position.copy(aimWorld);
+}
+
+function setLaserVisible(visible) {
+  if (!laserLine) return;
+  laserLine.visible = visible;
+  muzzleMarker.visible = visible;
+  aimMarker.visible = visible;
+}
+
+/* =========================================================
+   右コントローラー用ポインターレイ(メニュー表示中のみ表示)
+   ========================================================= */
+function attachPointerRay(controller) {
+  const geo = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1),
+  ]);
+  const ray = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0xffe066 }));
+  ray.name = 'PointerRay';
+  ray.visible = false;
+  controller.add(ray);
+  controller.userData.pointerRay = ray;
+}
+
+/* =========================================================
+   設定メニュー: Yボタン→アイコン選択(⚙/🔫)→各設定画面、の2階層
+   Canvasテクスチャで左コントローラーに追従表示
+   ========================================================= */
+const CANVAS_W = 512, CANVAS_H = 620;
+const PANEL_W = 0.22, PANEL_H = 0.27;
+
+let menuGroup = null, menuMesh = null, menuCanvas = null, menuCtx = null, menuTexture = null;
+let menuState = 'closed'; // 'closed' | 'icons' | 'gun' | 'dev'
+let hitAreas = [];
+
+function buildMenuPanel() {
+  menuCanvas = document.createElement('canvas');
+  menuCanvas.width = CANVAS_W;
+  menuCanvas.height = CANVAS_H;
+  menuCtx = menuCanvas.getContext('2d');
+  menuTexture = new THREE.CanvasTexture(menuCanvas);
+
+  const geo = new THREE.PlaneGeometry(PANEL_W, PANEL_H);
+  const mat = new THREE.MeshBasicMaterial({ map: menuTexture, transparent: true, side: THREE.DoubleSide });
+  menuMesh = new THREE.Mesh(geo, mat);
+  menuMesh.name = 'SettingsPanel';
+  menuMesh.position.set(0.02, 0.03, -0.13);
+  menuMesh.rotation.x = -Math.PI / 7;
+
+  menuGroup = new THREE.Group();
+  menuGroup.add(menuMesh);
+  menuGroup.visible = false;
+
+  return menuGroup;
+}
+
+function attachMenuPanel(controller) {
+  controller.add(buildMenuPanel());
+}
+
+function setMenuState(state) {
+  menuState = state;
+  if (menuGroup) menuGroup.visible = state !== 'closed';
+  if (state === 'icons') drawIconsMenu();
+  else if (state === 'gun') drawGunMenu();
+  else if (state === 'dev') drawDevMenu();
+}
+
+function drawPanelChrome(title) {
+  const ctx = menuCtx;
+  ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+  ctx.fillStyle = 'rgba(18,20,26,0.92)';
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+  ctx.strokeStyle = '#5599dd';
+  ctx.lineWidth = 4;
+  ctx.strokeRect(2, 2, CANVAS_W - 4, CANVAS_H - 4);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 28px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(title, CANVAS_W / 2, 44);
+
+  hitAreas = [];
+}
+
+function drawBackButton() {
+  const ctx = menuCtx;
+  ctx.fillStyle = '#33445a';
+  ctx.fillRect(16, 16, 90, 40);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '18px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('◀ Menu', 61, 42);
+  hitAreas.push({ action: 'back', x0: 16, y0: 16, x1: 106, y1: 56 });
+}
+
+function drawIconsMenu() {
+  drawPanelChrome('Settings');
+
+  const boxW = 190, boxH = 220;
+  const gap = 20;
+  const totalW = boxW * 2 + gap;
+  const startX = (CANVAS_W - totalW) / 2;
+  const y = 130;
+
+  // 🔫 銃の較正設定
+  const ctx = menuCtx;
+  ctx.fillStyle = '#22314a';
+  ctx.fillRect(startX, y, boxW, boxH);
+  ctx.font = '84px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText('🔫', startX + boxW / 2, y + 120);
+  ctx.font = '20px sans-serif';
+  ctx.fillText('Gun', startX + boxW / 2, y + boxH - 20);
+  hitAreas.push({ action: 'openGun', x0: startX, y0: y, x1: startX + boxW, y1: y + boxH });
+
+  // ⚙ System設定(発射速度など、銃に依存しない全体設定)
+  const x2 = startX + boxW + gap;
+  ctx.fillStyle = '#22314a';
+  ctx.fillRect(x2, y, boxW, boxH);
+  ctx.font = '84px sans-serif';
+  ctx.fillStyle = '#ffffff'; // ここが抜けていて背景色のまま描画され、見えなくなっていた
+  ctx.fillText('⚙', x2 + boxW / 2, y + 120);
+  ctx.font = '20px sans-serif';
+  ctx.fillText('System', x2 + boxW / 2, y + boxH - 20);
+  hitAreas.push({ action: 'openDev', x0: x2, y0: y, x1: x2 + boxW, y1: y + boxH });
+
+  ctx.fillStyle = '#8899aa';
+  ctx.font = '15px sans-serif';
+  ctx.fillText('Yボタンでメニュー全体を閉じます', CANVAS_W / 2, CANVAS_H - 16);
+
+  menuTexture.needsUpdate = true;
+}
+
+function drawParamRows(params, values, startY, adjustAction) {
+  const ctx = menuCtx;
+  const rowH = 68;
+
+  params.forEach((p, i) => {
+    const y = startY + i * rowH;
+    const displayVal = p.storageScale ? values[p.key] / p.storageScale : values[p.key];
+    const valText = (Math.round(displayVal * 100) / 100) + p.unit;
+
+    ctx.textAlign = 'left';
+    ctx.font = '20px sans-serif';
+    ctx.fillStyle = '#c8d6e8';
+    ctx.fillText(p.label, 24, y + 30);
+
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 34px sans-serif';
+    ctx.fillStyle = '#66ccff';
+    const lx = CANVAS_W - 168;
+    ctx.fillText('◀', lx, y + 34);
+    hitAreas.push({ action: adjustAction, key: p.key, dir: -1, x0: lx - 34, y0: y - 4, x1: lx + 34, y1: y + 44 });
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '22px sans-serif';
+    ctx.fillText(valText, CANVAS_W - 96, y + 32);
+
+    ctx.fillStyle = '#66ccff';
+    ctx.font = 'bold 34px sans-serif';
+    const rx = CANVAS_W - 28;
+    ctx.fillText('▶', rx, y + 34);
+    hitAreas.push({ action: adjustAction, key: p.key, dir: 1, x0: rx - 34, y0: y - 4, x1: rx + 34, y1: y + 44 });
+  });
+
+  return startY + params.length * rowH;
+}
+
+function drawResetButton(y, action) {
+  const ctx = menuCtx;
+  ctx.fillStyle = '#5a2f2f';
+  ctx.fillRect(CANVAS_W / 2 - 90, y, 180, 44);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '22px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('Reset', CANVAS_W / 2, y + 30);
+  hitAreas.push({ action, x0: CANVAS_W / 2 - 90, y0: y, x1: CANVAS_W / 2 + 90, y1: y + 44 });
+}
+
+function drawGunMenu() {
+  drawPanelChrome(`${GUN_DISPLAY_NAME} — Calibration`);
+  drawBackButton();
+  const afterRows = drawParamRows(GUN_PARAMS, offsets, 88, 'adjustGun');
+  drawResetButton(afterRows + 8, 'resetGun');
+
+  const ctx = menuCtx;
+  ctx.fillStyle = '#8fd98f';
+  ctx.font = '14px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('自動保存されます (銃ごとに個別)', CANVAS_W / 2, CANVAS_H - 16);
+
+  menuTexture.needsUpdate = true;
+}
+
+function drawDevMenu() {
+  drawPanelChrome('System Settings');
+  drawBackButton();
+  const afterRows = drawParamRows(DEV_PARAMS, devSettings, 88, 'adjustDev');
+  drawResetButton(afterRows + 8, 'resetDev');
+
+  const ctx = menuCtx;
+  ctx.fillStyle = '#8fd98f';
+  ctx.font = '14px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('自動保存されます (銃に依存しない全体設定)', CANVAS_W / 2, CANVAS_H - 16);
+
+  menuTexture.needsUpdate = true;
+}
+
+function adjustGunParam(key, dir) {
+  const p = GUN_PARAMS.find((pp) => pp.key === key);
+  if (!p) return;
+  offsets[key] = adjustedGunParamValue(offsets[key], p, dir);
+  applyOffsetsToNode();
+  drawGunMenu();
+  saveGunOffsets(GUN_ID, offsets);
+}
+
+function resetGunParams() {
+  Object.assign(offsets, defaultOffsets());
+  applyOffsetsToNode();
+  drawGunMenu();
+  saveGunOffsets(GUN_ID, offsets);
+}
+
+function adjustDevParam(key, dir) {
+  const p = DEV_PARAMS.find((pp) => pp.key === key);
+  if (!p) return;
+  devSettings[key] = adjustedDevSettingValue(devSettings[key], p, dir);
+  applyGunScale();
+  drawDevMenu();
+  saveDevSettings(devSettings);
+}
+
+function resetDevParams() {
+  Object.assign(devSettings, defaultDevSettings());
+  applyGunScale();
+  drawDevMenu();
+  saveDevSettings(devSettings);
+}
+
+/* =========================================================
+   入力
+   - 左Yボタン(xr-standardのbuttons[5])のエッジ検出でメニュー全体を開閉
+     (三本線メニューボタンはOS/ブラウザ予約のためWebXRには公開されない)
+   - 右トリガー(selectstart)：メニュー表示中はパネル操作、閉じていれば発砲
+   ========================================================= */
+let prevLeftYPressed = false;
+const Y_BUTTON_INDEX = 5; // xr-standardマッピング: 4=X, 5=Y(左) / 4=A, 5=B(右)
+
+function pollLeftMenuButton() {
+  if (!leftInputSource || !leftInputSource.gamepad) return;
+  const btn = leftInputSource.gamepad.buttons[Y_BUTTON_INDEX];
+  const pressed = !!(btn && btn.pressed);
+  if (pressed && !prevLeftYPressed) {
+    setMenuState(menuState === 'closed' ? 'icons' : 'closed');
+  }
+  prevLeftYPressed = pressed;
+}
+
+const raycaster = new THREE.Raycaster();
+const rayMatrix = new THREE.Matrix4();
+let lastPanelClickTime = 0;
+const PANEL_CLICK_COOLDOWN_MS = 150; // トリガーのアナログ入力が閾値付近でバウンドし、
+                                      // 1回の操作で複数回selectstartが発火するのを防ぐ
+
+function onSelectStart(event) {
+  const controller = event.target;
+  if (controller.userData.handedness !== 'right') return;
+
+  if (menuState !== 'closed' && menuGroup && menuGroup.visible && menuMesh) {
+    handlePanelClick(controller);
+  } else {
+    fireBullet();
+  }
+}
+
+function handlePanelClick(controller) {
+  const now = performance.now();
+  if (now - lastPanelClickTime < PANEL_CLICK_COOLDOWN_MS) return;
+  lastPanelClickTime = now;
+
+  rayMatrix.identity().extractRotation(controller.matrixWorld);
+  raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+  raycaster.ray.direction.set(0, 0, -1).applyMatrix4(rayMatrix);
+
+  const intersects = raycaster.intersectObject(menuMesh);
+  if (intersects.length === 0 || !intersects[0].uv) return;
+
+  const uv = intersects[0].uv;
+  const px = uv.x * CANVAS_W;
+  const py = (1 - uv.y) * CANVAS_H;
+
+  for (const area of hitAreas) {
+    if (px >= area.x0 && px <= area.x1 && py >= area.y0 && py <= area.y1) {
+      switch (area.action) {
+        case 'openGun': setMenuState('gun'); break;
+        case 'openDev': setMenuState('dev'); break;
+        case 'back': setMenuState('icons'); break;
+        case 'adjustGun': adjustGunParam(area.key, area.dir); break;
+        case 'resetGun': resetGunParams(); break;
+        case 'adjustDev': adjustDevParam(area.key, area.dir); break;
+        case 'resetDev': resetDevParams(); break;
+      }
+      break;
+    }
+  }
+}
+
+/* =========================================================
+   レンダーループ
+   ========================================================= */
+function render() {
+  const delta = Math.min(clock.getDelta(), 0.05);
+
+  pollLeftMenuButton();
+
+  const menuVisible = menuState !== 'closed';
+  if (rightController && rightController.userData.pointerRay) {
+    rightController.userData.pointerRay.visible = menuVisible;
+  }
+
+  if (menuVisible) {
+    setLaserVisible(false);
+  } else {
+    updateLaser();
+    setLaserVisible(true);
+  }
+
+  updateBullets(delta);
+  renderer.render(scene, camera);
+}
+
+function onWindowResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+/* すべての宣言が読み込まれた後に起動する(letのTDZを避けるため) */
+init();
+renderer.setAnimationLoop(render);
+</script>
 </body>
 </html>
