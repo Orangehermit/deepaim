@@ -39,23 +39,108 @@
 import * as THREE from 'three';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { ACTIVE_GUN } from './src/config/guns.js';
-import { GUN_PARAMS, DEV_PARAMS } from './src/config/settingsSchemas.js';
-import { defaultOffsets, adjustedGunParamValue } from './src/domain/settings/calibration.js';
-import { defaultDevSettings, adjustedDevSettingValue } from './src/domain/settings/devSettings.js';
-import {
-  loadGunOffsets,
-  saveGunOffsets,
-  loadDevSettings,
-  saveDevSettings,
-} from './src/browser/localStorageSettingsRepository.js';
 
-const { id: GUN_ID, displayName: GUN_DISPLAY_NAME, modelUrl: MODEL_URL } = ACTIVE_GUN;
+const MODEL_URL = '../assets/models/colt_python_357.glb';
+const GUN_ID = 'colt_python';
+const GUN_DISPLAY_NAME = 'Colt Python';
+// 一時的に内部識別名を "bolt_byson" に変えたことがあるため、その名義で
+// 保存された較正値があれば "colt_python" に統合する(値を失わないための救済)。
+const LEGACY_GUN_IDS = ['bolt_byson'];
 
 const statusEl = document.getElementById('status');
 
-const offsets = loadGunOffsets(ACTIVE_GUN);
+/* =========================================================
+   ストレージ: 銃の較正値(銃ID別)と開発/デバッグ設定を別キーで保持
+   ========================================================= */
+const STORAGE_KEY_GUN = 'deepAimGunOffsets';
+const STORAGE_KEY_DEV = 'deepAimDevSettings';
+
+function defaultOffsets() {
+  return { pitch: 0, yaw: 0, roll: 0, offsetX: 0, offsetY: 0, offsetZ: 0 };
+}
+
+function defaultDevSettings() {
+  return { bulletSpeed: 25, gunScale: 1.0 };
+}
+
+function loadGunOffsets() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_GUN);
+    const all = raw ? JSON.parse(raw) : {};
+
+    if (all[GUN_ID]) {
+      return Object.assign(defaultOffsets(), all[GUN_ID]);
+    }
+
+    // 内部識別名を一時的に変えていたことに伴う較正値の移行。
+    // 実機で調整済みの値をリネームだけで失わないようにするための救済措置。
+    for (const legacyId of LEGACY_GUN_IDS) {
+      if (all[legacyId]) {
+        const migrated = Object.assign(defaultOffsets(), all[legacyId]);
+        all[GUN_ID] = migrated;
+        delete all[legacyId];
+        localStorage.setItem(STORAGE_KEY_GUN, JSON.stringify(all, null, 2));
+        console.log('[DeepAim] migrated offsets from legacy id', legacyId, '->', GUN_ID);
+        return migrated;
+      }
+    }
+
+    return defaultOffsets();
+  } catch (e) {
+    console.warn('[DeepAim] gun offset load failed, using defaults', e);
+    return defaultOffsets();
+  }
+}
+
+function saveGunOffsets(offsets) {
+  let all = {};
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_GUN);
+    if (raw) all = JSON.parse(raw);
+  } catch (e) { /* 破損していたら作り直す */ }
+  all[GUN_ID] = offsets;
+  try {
+    localStorage.setItem(STORAGE_KEY_GUN, JSON.stringify(all, null, 2));
+  } catch (e) {
+    console.warn('[DeepAim] gun offset save failed', e);
+  }
+}
+
+function loadDevSettings() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_DEV);
+    if (!raw) return defaultDevSettings();
+    return Object.assign(defaultDevSettings(), JSON.parse(raw));
+  } catch (e) {
+    console.warn('[DeepAim] dev settings load failed, using defaults', e);
+    return defaultDevSettings();
+  }
+}
+
+function saveDevSettings(dev) {
+  try {
+    localStorage.setItem(STORAGE_KEY_DEV, JSON.stringify(dev, null, 2));
+  } catch (e) {
+    console.warn('[DeepAim] dev settings save failed', e);
+  }
+}
+
+const offsets = loadGunOffsets();
 const devSettings = loadDevSettings();
+
+const GUN_PARAMS = [
+  { key: 'pitch',   label: 'Pitch',    unit: '°',  step: 0.5, min: -30,  max: 30 },
+  { key: 'yaw',     label: 'Yaw',      unit: '°',  step: 0.5, min: -30,  max: 30 },
+  { key: 'roll',    label: 'Roll',     unit: '°',  step: 0.5, min: -30,  max: 30 },
+  { key: 'offsetX', label: 'Offset X', unit: 'mm', step: 1, storageScale: 0.001, min: -100, max: 100 },
+  { key: 'offsetY', label: 'Offset Y', unit: 'mm', step: 1, storageScale: 0.001, min: -100, max: 100 },
+  { key: 'offsetZ', label: 'Offset Z', unit: 'mm', step: 1, storageScale: 0.001, min: -100, max: 100 },
+];
+
+const DEV_PARAMS = [
+  { key: 'bulletSpeed', label: 'Bullet Speed', unit: 'm/s', step: 1, min: 1, max: 300 },
+  { key: 'gunScale',    label: 'Gun Scale',    unit: '×',   step: 0.02, min: 0.8, max: 1.5 },
+];
 
 /* =========================================================
    基本セットアップ(gun_test3.htmlを踏襲)
@@ -542,23 +627,39 @@ function drawDevMenu() {
 function adjustGunParam(key, dir) {
   const p = GUN_PARAMS.find((pp) => pp.key === key);
   if (!p) return;
-  offsets[key] = adjustedGunParamValue(offsets[key], p, dir);
+  const stepInStorageUnits = p.storageScale ? p.step * p.storageScale : p.step;
+  let next = offsets[key] + dir * stepInStorageUnits;
+
+  // min/maxは表示単位(°やmm)で定義しているので、格納単位に変換してからクランプする
+  if (p.min !== undefined) {
+    const minStorage = p.storageScale ? p.min * p.storageScale : p.min;
+    next = Math.max(minStorage, next);
+  }
+  if (p.max !== undefined) {
+    const maxStorage = p.storageScale ? p.max * p.storageScale : p.max;
+    next = Math.min(maxStorage, next);
+  }
+
+  offsets[key] = Math.round(next * 10000) / 10000;
   applyOffsetsToNode();
   drawGunMenu();
-  saveGunOffsets(GUN_ID, offsets);
+  saveGunOffsets(offsets);
 }
 
 function resetGunParams() {
   Object.assign(offsets, defaultOffsets());
   applyOffsetsToNode();
   drawGunMenu();
-  saveGunOffsets(GUN_ID, offsets);
+  saveGunOffsets(offsets);
 }
 
 function adjustDevParam(key, dir) {
   const p = DEV_PARAMS.find((pp) => pp.key === key);
   if (!p) return;
-  devSettings[key] = adjustedDevSettingValue(devSettings[key], p, dir);
+  let next = devSettings[key] + dir * p.step;
+  if (p.min !== undefined) next = Math.max(p.min, next);
+  if (p.max !== undefined) next = Math.min(p.max, next);
+  devSettings[key] = Math.round(next * 100) / 100;
   applyGunScale();
   drawDevMenu();
   saveDevSettings(devSettings);
