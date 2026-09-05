@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deep Aim - Gun Model Test</title>
+
+<style>
+html, body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #05070b;
+    color: #e8edf5;
+    font-family: system-ui, sans-serif;
+}
+
+#ui {
+    position: fixed;
+    top: 12px;
+    left: 12px;
+    z-index: 10;
+    width: 330px;
+    max-height: calc(100vh - 24px);
+    overflow-y: auto;
+    padding: 14px;
+    box-sizing: border-box;
+    background: rgba(10, 14, 22, 0.9);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 10px;
+    backdrop-filter: blur(8px);
+}
+
+h1 { margin: 0 0 6px; font-size: 18px; }
+.hint { margin: 0 0 12px; color: #aab5c7; font-size: 12px; line-height: 1.45; }
+
+.group-title {
+    margin: 14px 0 5px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255,255,255,0.12);
+    font-weight: 700;
+    color: #dce7f8;
+}
+
+.row {
+    display: grid;
+    grid-template-columns: 72px 1fr 65px;
+    align-items: center;
+    gap: 8px;
+    margin: 7px 0;
+    font-size: 12px;
+}
+
+input[type="range"] { width: 100%; }
+output {
+    text-align: right;
+    color: #9fd3ff;
+    font-variant-numeric: tabular-nums;
+}
+
+button {
+    width: 100%;
+    margin-top: 8px;
+    padding: 9px;
+    color: #fff;
+    background: #22334a;
+    border: 1px solid #40516b;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+button:hover { background: #2d4563; }
+
+#status, #info {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255,255,255,0.12);
+    white-space: pre-wrap;
+    font-size: 11px;
+    line-height: 1.45;
+}
+
+#status { color: #b7c2d4; }
+#info { color: #8190a5; }
+</style>
+
+<script type="importmap">
+{
+    "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.181.1/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.181.1/examples/jsm/"
+    }
+}
+</script>
+</head>
+
+<body>
+
+<div id="ui">
+    <h1>Deep Aim: Gun Model Test</h1>
+    <p class="hint">
+        Desktop mode automatically centers and scales the GLB so it should be visible immediately.
+        VR mode attaches the calibrated gun to the controller identified as the right hand.
+    </p>
+
+    <div class="group-title">Visual model offset</div>
+
+    <div class="row"><span>Pos X</span><input id="px" type="range" min="-0.50" max="0.50" step="0.005" value="0"><output></output></div>
+    <div class="row"><span>Pos Y</span><input id="py" type="range" min="-0.50" max="0.50" step="0.005" value="0"><output></output></div>
+    <div class="row"><span>Pos Z</span><input id="pz" type="range" min="-0.50" max="0.50" step="0.005" value="0"><output></output></div>
+
+    <div class="group-title">Visual model rotation</div>
+
+    <div class="row"><span>Rot X</span><input id="rx" type="range" min="-180" max="180" step="1" value="0"><output></output></div>
+    <div class="row"><span>Rot Y</span><input id="ry" type="range" min="-180" max="180" step="1" value="0"><output></output></div>
+    <div class="row"><span>Rot Z</span><input id="rz" type="range" min="-180" max="180" step="1" value="0"><output></output></div>
+
+    <div class="group-title">Scale multiplier</div>
+    <div class="row"><span>Scale</span><input id="scale" type="range" min="0.10" max="3.00" step="0.01" value="1"><output></output></div>
+
+    <button id="resetButton">Reset adjustment</button>
+
+    <div id="status">Starting...</div>
+    <div id="info"></div>
+</div>
+
+<script type="module">
+import * as THREE from "three";
+import { VRButton } from "three/addons/webxr/VRButton.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+
+const MODEL_URL = "./assets/models/colt_python_357.glb";
+
+// -----------------------------------------------------------------------------
+// Scene
+// -----------------------------------------------------------------------------
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x05070b);
+
+const camera = new THREE.PerspectiveCamera(
+    65,
+    window.innerWidth / window.innerHeight,
+    0.01,
+    100
+);
+
+camera.position.set(0, 1.6, 2.0);
+camera.lookAt(0, 1.25, 0);
+
+const renderer = new THREE.WebGLRenderer({
+    antialias: true,
+    powerPreference: "high-performance"
+});
+
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.xr.enabled = true;
+
+document.body.appendChild(renderer.domElement);
+document.body.appendChild(VRButton.createButton(renderer));
+
+const status = document.getElementById("status");
+const info = document.getElementById("info");
+
+// -----------------------------------------------------------------------------
+// Environment
+// -----------------------------------------------------------------------------
+
+scene.add(new THREE.HemisphereLight(0xb7c8ff, 0x101018, 2.2));
+
+const keyLight = new THREE.DirectionalLight(0xffffff, 2.5);
+keyLight.position.set(2, 4, 2);
+scene.add(keyLight);
+
+const floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(20, 20),
+    new THREE.MeshStandardMaterial({
+        color: 0x141922,
+        roughness: 0.95
+    })
+);
+
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor);
+
+const grid = new THREE.GridHelper(
+    20,
+    40,
+    0x3b4658,
+    0x202936
+);
+
+grid.position.y = 0.001;
+scene.add(grid);
+
+// -----------------------------------------------------------------------------
+// Gun hierarchy
+//
+// GunRoot
+// ├── VisualModelRoot
+// │     └── ModelOffset
+// │            └── CenteredModel
+// └── Debug forward guide
+//
+// ModelOffset is for calibration.
+// CenteredModel contains the GLB after automatic bounding-box centering.
+// -----------------------------------------------------------------------------
+
+const gunRoot = new THREE.Group();
+gunRoot.name = "GunRoot";
+
+const visualModelRoot = new THREE.Group();
+visualModelRoot.name = "VisualModelRoot";
+
+const modelOffset = new THREE.Group();
+modelOffset.name = "ModelOffset";
+
+const centeredModel = new THREE.Group();
+centeredModel.name = "CenteredModel";
+
+gunRoot.add(visualModelRoot);
+visualModelRoot.add(modelOffset);
+modelOffset.add(centeredModel);
+
+// Debug axes
+const axes = new THREE.AxesHelper(0.25);
+gunRoot.add(axes);
+
+// Debug forward direction: local -Z
+const forwardGuide = new THREE.ArrowHelper(
+    new THREE.Vector3(0, 0, -1),
+    new THREE.Vector3(0, 0, 0),
+    0.65,
+    0x00ffcc,
+    0.06,
+    0.035
+);
+
+gunRoot.add(forwardGuide);
+
+// Desktop test position: deliberately in front of the camera.
+const desktopGunPose = new THREE.Vector3(0, 1.25, 0);
+const desktopGunRotation = new THREE.Euler(0, 0, 0);
+
+scene.add(gunRoot);
+
+// -----------------------------------------------------------------------------
+// Controllers
+//
+// We create both and listen for the WebXR input source's handedness.
+// When a controller reports "right", GunRoot is moved onto it.
+// -----------------------------------------------------------------------------
+
+const controller0 = renderer.xr.getController(0);
+const controller1 = renderer.xr.getController(1);
+
+scene.add(controller0);
+scene.add(controller1);
+
+let rightController = null;
+let gunAttachedToController = false;
+
+function watchController(controller) {
+    controller.addEventListener("connected", (event) => {
+        const handedness = event.data.handedness;
+
+        if (handedness === "right") {
+            rightController = controller;
+
+            status.textContent =
+                "Right controller detected.\n" +
+                "The gun will attach to it when VR starts.";
+        }
+    });
+
+    controller.addEventListener("disconnected", () => {
+        if (rightController === controller) {
+            rightController = null;
+        }
+    });
+}
+
+watchController(controller0);
+watchController(controller1);
+
+// -----------------------------------------------------------------------------
+// VR session transitions
+// -----------------------------------------------------------------------------
+
+renderer.xr.addEventListener("sessionstart", () => {
+    if (rightController) {
+        // Preserve no desktop transform. GunRoot's local transform is now
+        // interpreted relative to the controller.
+        scene.remove(gunRoot);
+        rightController.add(gunRoot);
+
+        gunRoot.position.set(0, 0, 0);
+        gunRoot.rotation.set(0, 0, 0);
+
+        gunAttachedToController = true;
+
+        status.textContent =
+            "VR started.\n" +
+            "Gun attached to right controller.";
+    } else {
+        gunAttachedToController = false;
+
+        status.textContent =
+            "VR started, but right controller was not identified yet.\n" +
+            "Move or wake the right controller.";
+    }
+});
+
+renderer.xr.addEventListener("sessionend", () => {
+    if (gunRoot.parent !== scene) {
+        gunRoot.parent.remove(gunRoot);
+        scene.add(gunRoot);
+    }
+
+    gunAttachedToController = false;
+
+    gunRoot.position.copy(desktopGunPose);
+    gunRoot.rotation.copy(desktopGunRotation);
+
+    status.textContent =
+        "Desktop mode.\n" +
+        "The model is auto-centered and visible in front of the camera.";
+});
+
+// -----------------------------------------------------------------------------
+// Model loading and automatic normalization
+// -----------------------------------------------------------------------------
+
+const loader = new GLTFLoader();
+
+status.textContent = `Loading model...\n${MODEL_URL}`;
+
+loader.load(
+    MODEL_URL,
+
+    (gltf) => {
+        const model = gltf.scene;
+
+        model.traverse((object) => {
+            if (object.isMesh) {
+                object.castShadow = true;
+                object.receiveShadow = true;
+            }
+        });
+
+        // First update world matrices before measuring.
+        model.updateMatrixWorld(true);
+
+        const box = new THREE.Box3().setFromObject(model);
+        const size = new THREE.Vector3();
+        const center = new THREE.Vector3();
+
+        box.getSize(size);
+        box.getCenter(center);
+
+        // Move the visual geometry so its bounding-box center becomes (0,0,0).
+        // This means the external GLB's arbitrary origin cannot hide the model
+        // far below or beside our test position.
+        model.position.sub(center);
+
+        // Normalize the longest dimension to a reasonable pistol-scale test size.
+        const maxDimension = Math.max(size.x, size.y, size.z);
+
+        // 0.30m is a deliberately visible initial size.
+        const targetSize = 0.30;
+        const normalizationScale = targetSize / maxDimension;
+
+        model.scale.setScalar(normalizationScale);
+
+        centeredModel.add(model);
+
+        // Recalculate after normalization for information.
+        centeredModel.updateMatrixWorld(true);
+
+        status.textContent =
+            "Colt Python loaded successfully.\n" +
+            "Auto-centered and normalized to approximately 30 cm.";
+
+        info.textContent =
+            "Original bounding box\n" +
+            `X: ${size.x.toFixed(3)}\n` +
+            `Y: ${size.y.toFixed(3)}\n` +
+            `Z: ${size.z.toFixed(3)}\n\n` +
+            `Normalization scale: ${normalizationScale.toFixed(6)}\n` +
+            "Now use the sliders only for visual calibration.";
+    },
+
+    (progress) => {
+        if (progress.total > 0) {
+            const percent = Math.round(
+                (progress.loaded / progress.total) * 100
+            );
+
+            status.textContent = `Loading model: ${percent}%`;
+        }
+    },
+
+    (error) => {
+        console.error(error);
+
+        status.textContent =
+            "MODEL LOAD ERROR\n\n" +
+            `Could not load:\n${MODEL_URL}\n\n` +
+            "Check that gun_test.html is in the repository root and the GLB exists in assets/models/.";
+    }
+);
+
+// -----------------------------------------------------------------------------
+// Calibration controls
+// -----------------------------------------------------------------------------
+
+const defaults = {
+    px: 0,
+    py: 0,
+    pz: 0,
+    rx: 0,
+    ry: 0,
+    rz: 0,
+    scale: 1
+};
+
+const controls = {};
+
+function applyTransform() {
+    modelOffset.position.set(
+        controls.px ?? defaults.px,
+        controls.py ?? defaults.py,
+        controls.pz ?? defaults.pz
+    );
+
+    modelOffset.rotation.set(
+        THREE.MathUtils.degToRad(
+            controls.rx ?? defaults.rx
+        ),
+
+        THREE.MathUtils.degToRad(
+            controls.ry ?? defaults.ry
+        ),
+
+        THREE.MathUtils.degToRad(
+            controls.rz ?? defaults.rz
+        )
+    );
+
+    const scale = controls.scale ?? defaults.scale;
+
+    modelOffset.scale.setScalar(scale);
+}
+
+function bindControl(id) {
+    const input = document.getElementById(id);
+    const output = input.parentElement.querySelector("output");
+
+    function update() {
+        const value = Number(input.value);
+
+        controls[id] = value;
+
+        if (id.startsWith("r")) {
+            output.value = `${value.toFixed(0)}°`;
+        } else {
+            output.value = value.toFixed(3);
+        }
+
+        applyTransform();
+    }
+
+    input.addEventListener("input", update);
+    update();
+}
+
+[
+    "px",
+    "py",
+    "pz",
+    "rx",
+    "ry",
+    "rz",
+    "scale"
+].forEach(bindControl);
+
+document
+    .getElementById("resetButton")
+    .addEventListener("click", () => {
+        for (const [id, value] of Object.entries(defaults)) {
+            const element = document.getElementById(id);
+
+            element.value = value;
+            element.dispatchEvent(
+                new Event("input")
+            );
+        }
+    });
+
+// -----------------------------------------------------------------------------
+// Animation loop
+// -----------------------------------------------------------------------------
+
+renderer.setAnimationLoop(() => {
+    // Desktop mode: keep the test gun in front of the camera.
+    if (!renderer.xr.isPresenting) {
+        if (gunRoot.parent !== scene) {
+            gunRoot.parent.remove(gunRoot);
+            scene.add(gunRoot);
+        }
+
+        gunRoot.position.copy(desktopGunPose);
+        gunRoot.rotation.copy(desktopGunRotation);
+
+        gunAttachedToController = false;
+    }
+
+    // If VR started before the right controller emitted its connected event,
+    // attach as soon as the right hand becomes known.
+    if (
+        renderer.xr.isPresenting &&
+        rightController &&
+        !gunAttachedToController
+    ) {
+        if (gunRoot.parent) {
+            gunRoot.parent.remove(gunRoot);
+        }
+
+        rightController.add(gunRoot);
+
+        gunRoot.position.set(0, 0, 0);
+        gunRoot.rotation.set(0, 0, 0);
+
+        gunAttachedToController = true;
+
+        status.textContent =
+            "Right controller detected.\n" +
+            "Gun attached.";
+    }
+
+    renderer.render(scene, camera);
+});
+
+// -----------------------------------------------------------------------------
+// Resize
+// -----------------------------------------------------------------------------
+
+window.addEventListener("resize", () => {
+    camera.aspect =
+        window.innerWidth / window.innerHeight;
+
+    camera.updateProjectionMatrix();
+
+    renderer.setSize(
+        window.innerWidth,
+        window.innerHeight
+    );
+});
+</script>
+
+</body>
+</html>

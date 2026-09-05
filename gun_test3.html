@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deep Aim - Gun Test 3</title>
+<style>
+    body {
+        margin: 0;
+        overflow: hidden;
+        background: #050505;
+        font-family: Arial, sans-serif;
+        color: #eee;
+    }
+
+    #info {
+        position: absolute;
+        top: 12px;
+        left: 12px;
+        z-index: 10;
+        max-width: 420px;
+        padding: 12px 14px;
+        background: rgba(0, 0, 0, 0.72);
+        border: 1px solid rgba(255,255,255,0.15);
+        border-radius: 8px;
+        line-height: 1.45;
+        font-size: 14px;
+        pointer-events: none;
+    }
+
+    #status {
+        margin-top: 6px;
+        color: #9cff9c;
+        white-space: pre-line;
+    }
+
+    #vr-button {
+        position: absolute !important;
+        bottom: 20px !important;
+    }
+</style>
+</head>
+
+<body>
+<div id="info">
+    <strong>Deep Aim / Gun Test 3</strong><br>
+    New GLB metadata test:
+    <code>Gun_Root</code> / <code>Muzzle_Point</code> / <code>Aim_Point</code>
+    <div id="status">Loading...</div>
+</div>
+
+<script type="importmap">
+{
+    "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
+    }
+}
+</script>
+
+<script type="module">
+import * as THREE from "three";
+import { VRButton } from "three/addons/webxr/VRButton.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+
+const MODEL_URL = "./assets/models/colt_python_357.glb";
+
+const statusEl = document.getElementById("status");
+
+let scene, camera, renderer;
+let controller;
+let gunRoot = null;
+let muzzlePoint = null;
+let aimPoint = null;
+let laserLine = null;
+let muzzleMarker = null;
+let aimMarker = null;
+
+const bullets = [];
+const bulletSpeed = 25.0; // metres per second: deliberately slow enough to observe.
+const bulletLifetime = 3.0;
+const clock = new THREE.Clock();
+
+const muzzleWorld = new THREE.Vector3();
+const aimWorld = new THREE.Vector3();
+const shotDirection = new THREE.Vector3();
+
+init();
+renderer.setAnimationLoop(render);
+
+function init() {
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x090b10);
+
+    camera = new THREE.PerspectiveCamera(
+        70,
+        window.innerWidth / window.innerHeight,
+        0.01,
+        100
+    );
+    camera.position.set(0, 1.6, 1.5);
+
+    renderer = new THREE.WebGLRenderer({
+        antialias: true
+    });
+
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.xr.enabled = true;
+    renderer.xr.setReferenceSpaceType("local-floor");
+
+    document.body.appendChild(renderer.domElement);
+
+    const vrButton = VRButton.createButton(renderer);
+    vrButton.id = "vr-button";
+    document.body.appendChild(vrButton);
+
+    // ---------------------------------------------------------------------
+    // Lighting
+    // ---------------------------------------------------------------------
+
+    const ambient = new THREE.HemisphereLight(0xffffff, 0x202020, 1.6);
+    scene.add(ambient);
+
+    const directional = new THREE.DirectionalLight(0xffffff, 2.0);
+    directional.position.set(3, 5, 2);
+    scene.add(directional);
+
+    // ---------------------------------------------------------------------
+    // Floor
+    // ---------------------------------------------------------------------
+
+    const floorGeometry = new THREE.PlaneGeometry(20, 20);
+    const floorMaterial = new THREE.MeshStandardMaterial({
+        color: 0x1a1d22,
+        roughness: 0.9,
+        metalness: 0.0
+    });
+
+    const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = 0;
+    scene.add(floor);
+
+    const grid = new THREE.GridHelper(20, 20, 0x333333, 0x222222);
+    grid.position.y = 0.001;
+    scene.add(grid);
+
+    // Simple reference target.
+    const target = new THREE.Mesh(
+        new THREE.BoxGeometry(0.5, 0.5, 0.08),
+        new THREE.MeshStandardMaterial({
+            color: 0x666666,
+            roughness: 0.7
+        })
+    );
+    target.position.set(0, 1.6, -5);
+    scene.add(target);
+
+    // ---------------------------------------------------------------------
+    // 30 cm reference cube
+    //
+    // 0.30 units = 0.30 metres in this Three.js scene.
+    // It is placed roughly to the right of where the controller-held gun
+    // appears in VR, and floats at a comfortable inspection height.
+    // ---------------------------------------------------------------------
+
+    const referenceCube = new THREE.Mesh(
+        new THREE.BoxGeometry(0.30, 0.30, 0.30),
+        new THREE.MeshStandardMaterial({
+            color: 0x4f7fff,
+            roughness: 0.55,
+            metalness: 0.05,
+            transparent: true,
+            opacity: 0.75
+        })
+    );
+
+    // This is intentionally a world-space reference object, not a child
+    // of the controller. You can compare the physical 30 cm cube against
+    // the Colt Python while moving your hand around it.
+    referenceCube.position.set(0.45, 1.35, -0.45);
+    scene.add(referenceCube);
+
+    // Thin edge helper makes the cube's dimensions easier to judge.
+    const referenceCubeEdges = new THREE.LineSegments(
+        new THREE.EdgesGeometry(referenceCube.geometry),
+        new THREE.LineBasicMaterial({ color: 0xffffff })
+    );
+    referenceCubeEdges.position.copy(referenceCube.position);
+    scene.add(referenceCubeEdges);
+
+    // ---------------------------------------------------------------------
+    // XR Controller
+    // ---------------------------------------------------------------------
+
+    controller = renderer.xr.getController(1);
+    scene.add(controller);
+
+    controller.addEventListener("selectstart", () => {
+        fireBullet();
+
+        if (controller.gamepad && controller.gamepad.hapticActuators?.length) {
+            controller.gamepad.hapticActuators[0].pulse(0.5, 30).catch(() => {});
+        }
+    });
+
+    // ---------------------------------------------------------------------
+    // Load GLB
+    // ---------------------------------------------------------------------
+
+    const loader = new GLTFLoader();
+
+    loader.load(
+        MODEL_URL,
+        (gltf) => {
+            const loadedScene = gltf.scene;
+
+            // Search by the semantic names embedded in Blender.
+            gunRoot = loadedScene.getObjectByName("Gun_Root");
+            muzzlePoint = loadedScene.getObjectByName("Muzzle_Point");
+            aimPoint = loadedScene.getObjectByName("Aim_Point");
+
+            if (!gunRoot) {
+                statusEl.textContent =
+                    "ERROR: Gun_Root was not found in the GLB.";
+                console.error("Gun_Root was not found.", loadedScene);
+                return;
+            }
+
+            if (!muzzlePoint || !aimPoint) {
+                statusEl.textContent =
+                    "ERROR: Muzzle_Point or Aim_Point was not found.";
+                console.error("Required marker missing:", {
+                    muzzlePoint,
+                    aimPoint,
+                    loadedScene
+                });
+                return;
+            }
+
+            // The GLB itself defines the grip/root position and scale.
+            // No model-specific position / rotation / scale correction here.
+            gunRoot.position.set(0, 0, 0);
+            gunRoot.scale.set(1, 1, 1);
+
+            controller.add(gunRoot);
+
+            // -----------------------------------------------------------------
+            // Debug laser
+            // The line is defined every frame from:
+            // Muzzle_Point -> Aim_Point
+            // -----------------------------------------------------------------
+
+            const laserGeometry = new THREE.BufferGeometry();
+            laserGeometry.setAttribute(
+                "position",
+                new THREE.BufferAttribute(new Float32Array(6), 3)
+            );
+
+            const laserMaterial = new THREE.LineBasicMaterial({
+                color: 0xff3030
+            });
+
+            laserLine = new THREE.Line(laserGeometry, laserMaterial);
+            scene.add(laserLine);
+
+            // Small visible markers are useful for validating the exported
+            // Empty positions. They are not part of the actual gun model.
+            muzzleMarker = new THREE.Mesh(
+                new THREE.SphereGeometry(0.008, 12, 8),
+                new THREE.MeshBasicMaterial({ color: 0x00ff00 })
+            );
+            scene.add(muzzleMarker);
+
+            aimMarker = new THREE.Mesh(
+                new THREE.SphereGeometry(0.012, 12, 8),
+                new THREE.MeshBasicMaterial({ color: 0x00aaff })
+            );
+            scene.add(aimMarker);
+
+            // Print the imported hierarchy for inspection.
+            console.group("Deep Aim GLB hierarchy");
+            loadedScene.traverse((object) => {
+                console.log(
+                    `${object.name || "(unnamed)"} [${object.type}]`,
+                    object
+                );
+            });
+            console.groupEnd();
+
+            statusEl.textContent =
+                "GLB loaded successfully.\n" +
+                "Gun_Root: OK\n" +
+                "Muzzle_Point: OK\n" +
+                "Aim_Point: OK\n" +
+                "Laser: Muzzle_Point → Aim_Point\n" +
+                "Trigger: Fire";
+
+            console.log("Deep Aim gun ready:", {
+                gunRoot,
+                muzzlePoint,
+                aimPoint
+            });
+        },
+        (xhr) => {
+            if (xhr.total) {
+                const percent = Math.round((xhr.loaded / xhr.total) * 100);
+                statusEl.textContent = `Loading GLB... ${percent}%`;
+            } else {
+                statusEl.textContent = "Loading GLB...";
+            }
+        },
+        (error) => {
+            statusEl.textContent = "ERROR: Failed to load GLB.";
+            console.error("Failed to load GLB:", error);
+        }
+    );
+
+    window.addEventListener("resize", onWindowResize);
+}
+
+function fireBullet() {
+    if (!muzzlePoint || !aimPoint) return;
+
+    // The two Empty markers embedded in the GLB define the shot.
+    muzzlePoint.getWorldPosition(muzzleWorld);
+    aimPoint.getWorldPosition(aimWorld);
+
+    shotDirection
+        .copy(aimWorld)
+        .sub(muzzleWorld)
+        .normalize();
+
+    // Visible tracer / projectile.
+    const bullet = new THREE.Mesh(
+        new THREE.SphereGeometry(0.012, 10, 8),
+        new THREE.MeshBasicMaterial({ color: 0xffff66 })
+    );
+
+    bullet.position.copy(muzzleWorld);
+    scene.add(bullet);
+
+    bullets.push({
+        mesh: bullet,
+        velocity: shotDirection.clone().multiplyScalar(bulletSpeed),
+        age: 0
+    });
+}
+
+function updateBullets(delta) {
+    for (let i = bullets.length - 1; i >= 0; i--) {
+        const bullet = bullets[i];
+
+        bullet.mesh.position.addScaledVector(bullet.velocity, delta);
+        bullet.age += delta;
+
+        if (bullet.age >= bulletLifetime) {
+            scene.remove(bullet.mesh);
+            bullet.mesh.geometry.dispose();
+            bullet.mesh.material.dispose();
+            bullets.splice(i, 1);
+        }
+    }
+}
+
+function updateLaser() {
+    if (!muzzlePoint || !aimPoint || !laserLine) return;
+
+    muzzlePoint.getWorldPosition(muzzleWorld);
+    aimPoint.getWorldPosition(aimWorld);
+
+    const positions = laserLine.geometry.attributes.position.array;
+
+    positions[0] = muzzleWorld.x;
+    positions[1] = muzzleWorld.y;
+    positions[2] = muzzleWorld.z;
+
+    positions[3] = aimWorld.x;
+    positions[4] = aimWorld.y;
+    positions[5] = aimWorld.z;
+
+    laserLine.geometry.attributes.position.needsUpdate = true;
+    laserLine.geometry.computeBoundingSphere();
+
+    muzzleMarker.position.copy(muzzleWorld);
+    aimMarker.position.copy(aimWorld);
+}
+
+function render() {
+    const delta = Math.min(clock.getDelta(), 0.05);
+
+    updateLaser();
+    updateBullets(delta);
+
+    renderer.render(scene, camera);
+}
+
+function onWindowResize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+}
+</script>
+</body>
+</html>
