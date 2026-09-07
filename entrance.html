@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deep Aim — Entrance</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; padding: 0; overflow: hidden; background: #05070b; }
+  #info {
+    position: absolute; top: 10px; left: 10px; z-index: 10; max-width: 410px;
+    padding: 8px 12px; border-radius: 6px; background: rgba(0, 0, 0, 0.48);
+    color: #d7eaff; font: 13px/1.5 sans-serif;
+  }
+  #status { margin-top: 6px; color: #a6e7a6; white-space: pre-line; }
+</style>
+</head>
+<body>
+<div id="info">
+  <b>Deep Aim — Entrance</b><br>
+  右手の銃口レーザーでDoor、Category、Gunを照準し、右トリガーで決定します。<br>
+  左コントローラーのYボタンでSettingsを開閉します。<br>
+  Front Door: Training / Back Door: Exit / Right Door: Coming Soon
+  <div id="status">Preparing Entrance...</div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { VRButton } from 'three/addons/webxr/VRButton.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { GUNS, ENTRANCE_DEFAULT_GUN } from './src/config/guns.js';
+import { loadGunOffsets, loadDevSettings } from './src/browser/localStorageSettingsRepository.js';
+import { SceneManager } from './src/entrance/SceneManager.js';
+import { InteractionSystem } from './src/entrance/InteractionSystem.js';
+import {
+  createEntranceEnvironment,
+  createTrainingEnvironment,
+} from './src/entrance/EnvironmentFactory.js';
+import { SettingsPanel } from './src/entrance/SettingsPanel.js';
+import { createTextPlane } from './src/entrance/TextPlaneFactory.js';
+
+const statusEl = document.getElementById('status');
+const LASER_LENGTH = 12;
+const BULLET_LIFETIME = 3;
+
+let scene, camera, renderer, sceneManager;
+let rightController = null;
+let leftInputSource = null;
+let rightOffsetNode = null;
+let currentGun = null;
+let displayGunRoot = null;
+let entranceEnvironment, trainingEnvironment;
+let settingsPanel;
+let laserLine = null, muzzleMarker = null, aimMarker = null;
+let equipRequest = 0;
+let displayRequest = 0;
+
+const clock = new THREE.Clock();
+const loader = new GLTFLoader();
+const gunTemplates = new Map();
+const interactionSystem = new InteractionSystem();
+const bullets = [];
+const muzzleWorld = new THREE.Vector3();
+const aimWorld = new THREE.Vector3();
+const shotDirection = new THREE.Vector3();
+const laserEnd = new THREE.Vector3();
+const devSettings = loadDevSettings();
+
+init();
+renderer.setAnimationLoop(render);
+
+function init() {
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x05070b);
+
+  camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 100);
+  camera.position.set(0, 1.6, 3.6);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.xr.enabled = true;
+  renderer.xr.setReferenceSpaceType('local-floor');
+  document.body.appendChild(renderer.domElement);
+  document.body.appendChild(VRButton.createButton(renderer));
+
+  scene.add(new THREE.HemisphereLight(0xc8dcff, 0x11141d, 2.2));
+  const keyLight = new THREE.DirectionalLight(0xffffff, 2.8);
+  keyLight.position.set(2.5, 5, 3);
+  scene.add(keyLight);
+
+  entranceEnvironment = createEntranceEnvironment({
+    onEnterTraining: showTraining,
+    onExit: requestExit,
+    onRightSideDoor: showRightSidePlaceholder,
+    onSelectWeaponType: showSelectionGun,
+    onSelectionChanged: showSelectionStatus,
+  });
+  trainingEnvironment = createTrainingEnvironment({ onReturnEntrance: showEntrance });
+  scene.add(entranceEnvironment.group, trainingEnvironment.group);
+
+  for (const interactive of entranceEnvironment.interactives) interactionSystem.register(interactive.root, interactive);
+  for (const interactive of trainingEnvironment.interactives) interactionSystem.register(interactive.root, interactive);
+
+  sceneManager = new SceneManager({
+    entrance: entranceEnvironment.group,
+    training: trainingEnvironment.group,
+  });
+  sceneManager.showEntrance();
+
+  settingsPanel = new SettingsPanel({
+    getCurrentGun: () => currentGun,
+    devSettings,
+    onGunChanged: applyGunTransform,
+    onDevSettingsChanged: applyGunTransform,
+  });
+  setupControllers();
+  equipGun(ENTRANCE_DEFAULT_GUN.id);
+  showSelectionGun(ENTRANCE_DEFAULT_GUN.id);
+
+  renderer.xr.addEventListener('sessionstart', () => {
+    statusEl.textContent = 'VR ACTIVE\n右手の銃口レーザーでEntranceを操作します。';
+  });
+  renderer.xr.addEventListener('sessionend', () => {
+    statusEl.textContent = 'VR session ended. Entrance remains open in the browser.';
+  });
+  window.addEventListener('resize', onWindowResize);
+}
+
+function setupControllers() {
+  const controller0 = renderer.xr.getController(0);
+  const controller1 = renderer.xr.getController(1);
+  scene.add(controller0, controller1);
+
+  for (const controller of [controller0, controller1]) {
+    controller.addEventListener('connected', (event) => onControllerConnected(controller, event));
+    controller.addEventListener('disconnected', () => onControllerDisconnected(controller));
+    controller.addEventListener('selectstart', onSelectStart);
+  }
+}
+
+function onControllerConnected(controller, event) {
+  controller.userData.handedness = event.data.handedness;
+  if (event.data.handedness === 'right') {
+    rightController = controller;
+    rightOffsetNode = new THREE.Group();
+    rightOffsetNode.name = 'EntranceGunOffsetNode';
+    controller.add(rightOffsetNode);
+    applyGunTransform();
+    if (currentGun) rightOffsetNode.add(currentGun.gunRoot);
+    statusEl.textContent = 'Right controller detected. Default pistol is equipped.';
+  } else if (event.data.handedness === 'left') {
+    leftInputSource = event.data;
+    settingsPanel.attach(controller, event.data);
+  }
+}
+
+function onControllerDisconnected(controller) {
+  if (controller === rightController) {
+    rightController = null;
+    rightOffsetNode = null;
+    interactionSystem.clearHover();
+  } else if (controller.userData.handedness === 'left') {
+    settingsPanel.disconnect(leftInputSource);
+    leftInputSource = null;
+  }
+}
+
+function loadGunTemplate(gun) {
+  if (gunTemplates.has(gun.id)) return gunTemplates.get(gun.id);
+
+  const templatePromise = new Promise((resolve, reject) => {
+    loader.load(
+      gun.modelUrl,
+      (gltf) => {
+        const gunRoot = gltf.scene.getObjectByName('Gun_Root');
+        const muzzlePoint = gunRoot?.getObjectByName('Muzzle_Point');
+        const aimPoint = gunRoot?.getObjectByName('Aim_Point');
+        if (!gunRoot || !muzzlePoint || !aimPoint) {
+          reject(new Error(`${gun.displayName}: Gun_Root / Muzzle_Point / Aim_Point is required.`));
+          return;
+        }
+        resolve(gltf.scene);
+      },
+      undefined,
+      reject
+    );
+  });
+
+  gunTemplates.set(gun.id, templatePromise);
+  return templatePromise;
+}
+
+async function createGunInstance(gun, { cloneMaterials = false } = {}) {
+  const template = await loadGunTemplate(gun);
+  const instance = template.clone(true);
+  const gunRoot = instance.getObjectByName('Gun_Root');
+  const muzzlePoint = gunRoot.getObjectByName('Muzzle_Point');
+  const aimPoint = gunRoot.getObjectByName('Aim_Point');
+  if (cloneMaterials) {
+    gunRoot.traverse((object) => {
+      if (!object.isMesh) return;
+      object.material = Array.isArray(object.material)
+        ? object.material.map((material) => material.clone())
+        : object.material.clone();
+    });
+  }
+  return { gunRoot, muzzlePoint, aimPoint };
+}
+
+async function equipGun(gunId) {
+  const gun = GUNS[gunId];
+  if (!gun) return;
+
+  const requestId = ++equipRequest;
+  statusEl.textContent = `Equipping ${gun.displayName}...`;
+  try {
+    const instance = await createGunInstance(gun);
+    if (requestId !== equipRequest) return;
+
+    if (currentGun?.gunRoot.parent) currentGun.gunRoot.parent.remove(currentGun.gunRoot);
+    currentGun = {
+      definition: gun,
+      offsets: loadGunOffsets(gun),
+      ...instance,
+    };
+    attachAmmoDisplay(currentGun);
+    applyGunTransform();
+    if (rightOffsetNode) rightOffsetNode.add(currentGun.gunRoot);
+    settingsPanel?.refreshGun();
+    statusEl.textContent = `${gun.displayName} equipped. ${gun.capacity} rounds.`;
+  } catch (error) {
+    console.error('Failed to equip gun:', error);
+    statusEl.textContent = `ERROR: Failed to load ${gun.displayName}.`;
+  }
+}
+
+async function showSelectionGun(gunId) {
+  const gun = GUNS[gunId];
+  if (!gun) return;
+  const requestId = ++displayRequest;
+  statusEl.textContent = `Loading ${gun.selectionName} display...`;
+  try {
+    const { gunRoot } = await createGunInstance(gun, { cloneMaterials: true });
+    if (requestId !== displayRequest) return;
+
+    if (displayGunRoot) {
+      interactionSystem.unregister(displayGunRoot);
+      displayGunRoot.removeFromParent();
+    }
+    displayGunRoot = gunRoot;
+    const { position, rotation } = gun.selectionDisplayTransform;
+    gunRoot.position.set(position.x, position.y, position.z);
+    gunRoot.rotation.set(rotation.x, rotation.y, rotation.z);
+    gunRoot.scale.setScalar(devSettings.gunScale);
+    entranceEnvironment.selectionDisplay.mount.add(gunRoot);
+    entranceEnvironment.selectionDisplay.setGunName(gun.selectionName);
+
+    const highlightMeshes = [];
+    gunRoot.traverse((object) => {
+      if (object.isMesh) highlightMeshes.push(object);
+    });
+    interactionSystem.register(gunRoot, {
+      action: () => equipGun(gun.id),
+      highlightMeshes,
+    });
+    statusEl.textContent = `${gun.selectionName} displayed. Shoot the gun model to equip it.`;
+  } catch (error) {
+    console.error(`Failed to display ${gun.displayName}:`, error);
+    statusEl.textContent = `ERROR: Failed to display ${gun.selectionName}.`;
+  }
+}
+
+function attachAmmoDisplay(gun) {
+  const ammoDisplay = createTextPlane(String(gun.definition.capacity), {
+    color: '#fff2a3',
+    height: 0.055,
+  });
+  ammoDisplay.name = 'AmmoCapacityDisplay';
+  const { x, y, z } = gun.definition.ammoDisplayOffset;
+  ammoDisplay.position.set(x, y, z);
+  // PlaneGeometry faces local +Z: the grip/player side of guns whose muzzle
+  // axis points toward local -Z. As a Gun_Root child it inherits all rotation.
+  gun.gunRoot.add(ammoDisplay);
+}
+
+function applyGunTransform() {
+  if (!currentGun) return;
+  const { offsets } = currentGun;
+  if (rightOffsetNode) {
+    rightOffsetNode.rotation.set(
+      THREE.MathUtils.degToRad(offsets.pitch),
+      THREE.MathUtils.degToRad(offsets.yaw),
+      THREE.MathUtils.degToRad(offsets.roll)
+    );
+    rightOffsetNode.position.set(offsets.offsetX, offsets.offsetY, offsets.offsetZ);
+  }
+  currentGun.gunRoot.scale.setScalar(devSettings.gunScale);
+  if (displayGunRoot) displayGunRoot.scale.setScalar(devSettings.gunScale);
+}
+
+function ensureLaserObjects() {
+  if (laserLine) return;
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+  laserLine = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0xff3a3a }));
+  scene.add(laserLine);
+
+  muzzleMarker = new THREE.Mesh(
+    new THREE.SphereGeometry(0.008, 12, 8), new THREE.MeshBasicMaterial({ color: 0x00ff88 })
+  );
+  aimMarker = new THREE.Mesh(
+    new THREE.SphereGeometry(0.012, 12, 8), new THREE.MeshBasicMaterial({ color: 0x55bbff })
+  );
+  scene.add(muzzleMarker, aimMarker);
+}
+
+function getShotPose() {
+  if (!currentGun) return null;
+  currentGun.muzzlePoint.getWorldPosition(muzzleWorld);
+  currentGun.aimPoint.getWorldPosition(aimWorld);
+  shotDirection.copy(aimWorld).sub(muzzleWorld).normalize();
+  return { origin: muzzleWorld, direction: shotDirection };
+}
+
+function updateGunLaser() {
+  const shotPose = getShotPose();
+  if (!shotPose) {
+    interactionSystem.clearHover();
+    if (laserLine) laserLine.visible = false;
+    if (muzzleMarker) muzzleMarker.visible = false;
+    if (aimMarker) aimMarker.visible = false;
+    return;
+  }
+
+  ensureLaserObjects();
+  let hit;
+  if (settingsPanel.isOpen) {
+    interactionSystem.clearHover();
+    hit = settingsPanel.intersect(shotPose.origin, shotPose.direction);
+  } else {
+    hit = interactionSystem.update(shotPose.origin, shotPose.direction, LASER_LENGTH);
+  }
+  laserEnd.copy(hit ? hit.point : shotPose.origin).addScaledVector(
+    shotPose.direction,
+    hit ? 0 : LASER_LENGTH
+  );
+
+  const positions = laserLine.geometry.attributes.position.array;
+  positions[0] = shotPose.origin.x; positions[1] = shotPose.origin.y; positions[2] = shotPose.origin.z;
+  positions[3] = laserEnd.x; positions[4] = laserEnd.y; positions[5] = laserEnd.z;
+  laserLine.geometry.attributes.position.needsUpdate = true;
+  laserLine.geometry.computeBoundingSphere();
+  laserLine.visible = true;
+  muzzleMarker.position.copy(shotPose.origin);
+  aimMarker.position.copy(aimWorld);
+  muzzleMarker.visible = true;
+  aimMarker.visible = true;
+}
+
+function onSelectStart(event) {
+  if (event.target !== rightController) return;
+  if (settingsPanel.isOpen) {
+    const shotPose = getShotPose();
+    if (shotPose) settingsPanel.activate(shotPose.origin, shotPose.direction);
+    return;
+  }
+  fireShot();
+}
+
+function fireShot() {
+  const shotPose = getShotPose();
+  if (!shotPose) return;
+
+  const bullet = new THREE.Mesh(
+    new THREE.SphereGeometry(0.012, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffff66 })
+  );
+  bullet.position.copy(shotPose.origin);
+  scene.add(bullet);
+  bullets.push({
+    mesh: bullet,
+    velocity: shotPose.direction.clone().multiplyScalar(devSettings.bulletSpeed),
+    age: 0,
+  });
+
+  interactionSystem.update(shotPose.origin, shotPose.direction, LASER_LENGTH);
+  interactionSystem.fireHovered();
+  pulseRightHand();
+}
+
+function pulseRightHand() {
+  if (!rightController?.gamepad?.hapticActuators?.length) return;
+  rightController.gamepad.hapticActuators[0].pulse(0.5, 30).catch(() => {});
+}
+
+function updateBullets(delta) {
+  for (let index = bullets.length - 1; index >= 0; index--) {
+    const bullet = bullets[index];
+    bullet.mesh.position.addScaledVector(bullet.velocity, delta);
+    bullet.age += delta;
+    if (bullet.age < BULLET_LIFETIME) continue;
+    scene.remove(bullet.mesh);
+    bullet.mesh.geometry.dispose();
+    bullet.mesh.material.dispose();
+    bullets.splice(index, 1);
+  }
+}
+
+function showEntrance() {
+  sceneManager.showEntrance();
+  interactionSystem.clearHover();
+  statusEl.textContent = 'Entrance restored. Select a category or shoot the displayed gun.';
+}
+
+function showTraining() {
+  sceneManager.showTraining();
+  interactionSystem.clearHover();
+  statusEl.textContent = 'Training placeholder. Shoot the Return Door to go back.';
+}
+
+function showRightSidePlaceholder() {
+  statusEl.textContent = 'Right-side space is coming soon.';
+}
+
+function showSelectionStatus(message) {
+  statusEl.textContent = message;
+}
+
+function requestExit() {
+  interactionSystem.clearHover();
+  statusEl.textContent = 'Exit requested. Ending the WebXR session...';
+  const session = renderer.xr.getSession();
+  if (!session) {
+    statusEl.textContent = 'Exit requested. Close this browser tab to leave Deep Aim.';
+    return;
+  }
+  session.end().catch((error) => {
+    console.warn('Unable to end WebXR session:', error);
+    statusEl.textContent = 'Exit requested. Close this browser tab to leave Deep Aim.';
+  });
+}
+
+function render() {
+  const delta = Math.min(clock.getDelta(), 0.05);
+  settingsPanel.pollMenuButton();
+  updateGunLaser();
+  updateBullets(delta);
+  renderer.render(scene, camera);
+}
+
+function onWindowResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+</script>
+</body>
+</html>
