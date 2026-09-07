@@ -9,7 +9,7 @@ export const GUNS = Object.freeze({
     capacity: 16,
     ammoDisplayOffset: Object.freeze({ x: 0, y: 0.055, z: 0.10 }),
     selectionDisplayTransform: Object.freeze({
-      position: Object.freeze({ x: 0.05, y: -0.088, z: 0.4 }),
+      position: Object.freeze({ x: 0.05, y: -0.087, z: 0.4 }),
       rotation: Object.freeze({
         x: 0,
         y: 0, // Gun_Rootのローカル-Z、すなわちTraining Room（ワールド-Z）側へ
@@ -26,7 +26,7 @@ export const GUNS = Object.freeze({
     capacity: 6,
     ammoDisplayOffset: Object.freeze({ x: 0, y: 0.055, z: 0.05 }),
     selectionDisplayTransform: Object.freeze({
-      position: Object.freeze({ x: 0.05, y: -0.08, z: 0.4 }),
+      position: Object.freeze({ x: 0.05, y: -0.079, z: 0.4 }),
       rotation: Object.freeze({
         x: 0,
         y: 0, // Gun_Rootのローカル-Z、すなわちTraining Room（ワールド-Z）側へ
