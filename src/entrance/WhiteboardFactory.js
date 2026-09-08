@@ -88,7 +88,14 @@ function createSection(definition) {
   const heading = createTextPlane(definition.title, {
     color: '#000000',
     height: MAIN_CATEGORY_TEXT_HEIGHT,
+    fontFamily: 'Caveat',
+    fontWeight: 700,
+    fontSize: 96,
+    fontFallback: 'cursive',
+    waitForFont: true,
   });
+  // WhiteboardFactory.js の createSection() 内、heading作成直後に追加
+  heading.renderOrder = 1;
   heading.name = `MainCategoryHeading:${definition.id}`;
   heading.position.set(WHITEBOARD_FRONT_OFFSET, 0.70, 0);
   heading.rotation.y = Math.PI / 2;
