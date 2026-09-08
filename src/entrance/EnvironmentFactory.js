@@ -1,14 +1,40 @@
 import * as THREE from 'three';
 import { createTextPlane } from './TextPlaneFactory.js';
+import { createSelectionWhiteboard } from './WhiteboardFactory.js';
 
-const CATEGORY_HEADING_TEXT_HEIGHT = 0.32;
-const CATEGORY_BUTTON_TEXT_HEIGHT = 0.18;
 // WebXR replaces the desktop camera transform with the headset pose, so the
 // stationary player's forward direction is -Z from the room origin.
 const SELECTION_DISPLAY_POSITION = new THREE.Vector3(-0.6, 0.0, 0.0);
 const SELECTION_DISPLAY_PLACEHOLDER_SIZE = Object.freeze({ x: 0.50, y: 0.80, z: 1.00 });
 const SELECTION_DISPLAY_GUN_CLEARANCE = 0.10;
 const SELECTION_DISPLAY_ITEM_HEIGHT = SELECTION_DISPLAY_PLACEHOLDER_SIZE.y + SELECTION_DISPLAY_GUN_CLEARANCE;
+
+const WHITEBOARD_SECTIONS = Object.freeze([
+  Object.freeze({
+    id: 'weapon_type',
+    title: 'WEAPON TYPE',
+    items: Object.freeze([
+      Object.freeze({ id: 'desert_eagle', label: 'PISTOL', selected: true, hoverInfo: Object.freeze({ title: 'PISTOL' }) }),
+      Object.freeze({ id: 'colt_python', label: 'REVOLVER', hoverInfo: Object.freeze({ title: 'REVOLVER' }) }),
+    ]),
+  }),
+  Object.freeze({
+    id: 'style',
+    title: 'STYLE',
+    items: Object.freeze([
+      Object.freeze({ id: 'single', label: 'SINGLE', selected: true, hoverInfo: Object.freeze({ title: 'SINGLE' }) }),
+      Object.freeze({ id: 'akimbo', label: 'AKIMBO', hoverInfo: Object.freeze({ title: 'AKIMBO' }) }),
+    ]),
+  }),
+  Object.freeze({
+    id: 'modifier',
+    title: 'MODIFIER',
+    items: Object.freeze([
+      Object.freeze({ id: 'laser_sight', label: 'LASER SIGHT', hoverInfo: Object.freeze({ title: 'LASER SIGHT' }) }),
+      Object.freeze({ id: 'infinite_ammo', label: '∞ AMMO', hoverInfo: Object.freeze({ title: 'INFINITE AMMO' }) }),
+    ]),
+  }),
+]);
 
 function createSurface({ width, height, depth = 0.12, color = 0x273244, emissive = 0x000000 }) {
   return new THREE.Mesh(
@@ -74,42 +100,6 @@ function addRoomShell(group, { width, depth, wallColor, floorColor }) {
   group.add(rightWall);
 }
 
-function createSelectionButton(label, { width = 1.05, selected = false } = {}) {
-  const root = new THREE.Group();
-  const panel = createSurface({ width, height: 0.48, depth: 0.08, color: 0x263448, emissive: 0x03070d });
-  const text = createTextPlane(label, { height: CATEGORY_BUTTON_TEXT_HEIGHT });
-  text.position.z = 0.06;
-  root.add(panel, text);
-
-  const setSelected = (nextSelected) => {
-    panel.material.color.setHex(nextSelected ? 0x285f83 : 0x263448);
-    // Keep the emissive baseline stable so InteractionSystem can temporarily
-    // use emissive for hover without erasing the persistent selection state.
-    panel.material.emissive.setHex(0x03070d);
-    text.userData.setText(label, nextSelected ? '#79d7ff' : '#eaf4ff');
-  };
-  setSelected(selected);
-  return { root, panel, setSelected };
-}
-
-function createCategoryColumn(title, x, items) {
-  const root = new THREE.Group();
-  root.position.x = x;
-
-  const heading = createTextPlane(title, { color: '#8dc8ff', height: CATEGORY_HEADING_TEXT_HEIGHT });
-  heading.position.y = 0.64;
-  root.add(heading);
-
-  const buttons = new Map();
-  items.forEach((item, index) => {
-    const button = createSelectionButton(item.label, { width: item.width, selected: item.selected });
-    button.root.position.set((index - (items.length - 1) / 2) * 1.2, 0, 0);
-    root.add(button.root);
-    buttons.set(item.id, button);
-  });
-  return { root, buttons };
-}
-
 function createSelectionDisplay() {
   const group = new THREE.Group();
   group.name = 'WeaponSelectionDisplay';
@@ -150,17 +140,11 @@ function createSelectionDisplay() {
   mount.position.set(0, SELECTION_DISPLAY_ITEM_HEIGHT, 0);
   group.add(mount);
 
-  const nameLabel = createTextPlane('DUNE FALCON', { color: '#dcecff', height: 0.18 });
-  nameLabel.position.set(0, SELECTION_DISPLAY_PLACEHOLDER_SIZE.y + 0.016, 0.32);
-  nameLabel.rotation.x = -Math.PI / 2;
-  group.add(nameLabel);
-
   return {
     group,
     mount,
     modelMount,
     placeholder,
-    setGunName(name) { nameLabel.userData.setText(name); },
   };
 }
 
@@ -190,25 +174,11 @@ export function createEntranceEnvironment({
   });
   group.add(rightDoor.root);
 
-  const categoryWall = new THREE.Group();
-  categoryWall.name = 'CategorySelectionWall';
-  categoryWall.position.set(-4.74, 1.58, -0.55);
-  categoryWall.rotation.y = Math.PI / 2;
-  group.add(categoryWall);
-
-  const weapon = createCategoryColumn('WEAPON TYPE', -2.65, [
-    { id: 'desert_eagle', label: 'PISTOL', selected: true },
-    { id: 'colt_python', label: 'REVOLVER' },
-  ]);
-  const style = createCategoryColumn('STYLE', 0, [
-    { id: 'single', label: 'SINGLE', selected: true },
-    { id: 'akimbo', label: 'AKIMBO' },
-  ]);
-  const modifier = createCategoryColumn('MODIFIER', 2.65, [
-    { id: 'laser_sight', label: 'LASER SIGHT', width: 1.15 },
-    { id: 'infinite_ammo', label: '∞ AMMO' },
-  ]);
-  categoryWall.add(weapon.root, style.root, modifier.root);
+  const whiteboard = createSelectionWhiteboard(WHITEBOARD_SECTIONS);
+  group.add(whiteboard.group);
+  const weapon = whiteboard.sections.get('weapon_type');
+  const style = whiteboard.sections.get('style');
+  const modifier = whiteboard.sections.get('modifier');
 
   const selectionDisplay = createSelectionDisplay();
   group.add(selectionDisplay.group);
@@ -227,6 +197,8 @@ export function createEntranceEnvironment({
     interactives.push({
       root: button.root,
       highlightMeshes: [button.panel],
+      hoverInfo: button.hoverInfo,
+      popupAnchor: button.popupAnchor,
       action: () => {
         selectedWeapon = id;
         for (const [buttonId, other] of weapon.buttons) other.setSelected(buttonId === id);
@@ -239,6 +211,8 @@ export function createEntranceEnvironment({
     interactives.push({
       root: button.root,
       highlightMeshes: [button.panel],
+      hoverInfo: button.hoverInfo,
+      popupAnchor: button.popupAnchor,
       action: () => {
         selectedStyle = id;
         for (const [buttonId, other] of style.buttons) other.setSelected(buttonId === id);
@@ -251,6 +225,8 @@ export function createEntranceEnvironment({
     interactives.push({
       root: button.root,
       highlightMeshes: [button.panel],
+      hoverInfo: button.hoverInfo,
+      popupAnchor: button.popupAnchor,
       action: () => {
         if (selectedModifiers.has(id)) selectedModifiers.delete(id);
         else selectedModifiers.add(id);
@@ -264,6 +240,7 @@ export function createEntranceEnvironment({
     group,
     interactives,
     selectionDisplay,
+    whiteboard,
     getSelection: () => ({ selectedWeapon, selectedStyle, selectedModifiers: new Set(selectedModifiers) }),
   };
 }

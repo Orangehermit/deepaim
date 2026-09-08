@@ -15,7 +15,10 @@ function loadFont({ fontFamily, fontWeight, fontSize }) {
   if (!document.fonts?.load) return null;
   const descriptor = `${fontWeight} ${fontSize}px "${fontFamily}"`;
   if (!fontLoads.has(descriptor)) {
-    fontLoads.set(descriptor, document.fonts.load(descriptor).then(() => document.fonts.ready));
+    fontLoads.set(descriptor, document.fonts.load(descriptor).then((fontFaces) => {
+      if (fontFaces.length === 0) throw new Error(`Font unavailable: ${descriptor}`);
+      return document.fonts.ready;
+    }));
   }
   return fontLoads.get(descriptor);
 }
@@ -28,6 +31,8 @@ export function createTextPlane(text, {
   fontSize = TEXT_STYLE.fontSize,
   paddingX = TEXT_STYLE.paddingX,
   paddingY = TEXT_STYLE.paddingY,
+  fontFallback = 'sans-serif',
+  waitForFont = false,
 } = {}) {
   const canvas = document.createElement('canvas');
   const context = canvas.getContext('2d');
@@ -51,7 +56,7 @@ export function createTextPlane(text, {
   let currentColor = color;
 
   const draw = () => {
-    context.font = `${fontWeight} ${fontSize}px "${fontFamily}", sans-serif`;
+    context.font = `${fontWeight} ${fontSize}px "${fontFamily}", ${fontFallback}`;
     const metrics = context.measureText(currentText);
     const textHeight = Math.ceil(
       (metrics.actualBoundingBoxAscent || fontSize * 0.8)
@@ -62,7 +67,7 @@ export function createTextPlane(text, {
 
     // Resizing a canvas resets its context state.
     context.clearRect(0, 0, canvas.width, canvas.height);
-    context.font = `${fontWeight} ${fontSize}px "${fontFamily}", sans-serif`;
+    context.font = `${fontWeight} ${fontSize}px "${fontFamily}", ${fontFallback}`;
     context.textAlign = 'center';
     context.textBaseline = 'middle';
     context.fillStyle = currentColor;
@@ -78,7 +83,16 @@ export function createTextPlane(text, {
     draw();
   };
 
-  draw();
-  loadFont({ fontFamily, fontWeight, fontSize })?.then(draw).catch(() => {});
+  const fontReady = loadFont({ fontFamily, fontWeight, fontSize });
+  if (waitForFont && fontReady) {
+    plane.visible = false;
+    fontReady
+      .then(() => draw())
+      .catch(() => draw())
+      .finally(() => { plane.visible = true; });
+  } else {
+    draw();
+    fontReady?.then(draw).catch(() => {});
+  }
   return plane;
 }

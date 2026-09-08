@@ -6,7 +6,7 @@
 <title>Deep Aim — Entrance</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@700&family=Oxanium:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
   html, body { margin: 0; padding: 0; overflow: hidden; background: #05070b; }
   #info {
@@ -43,6 +43,7 @@ import { GUNS, ENTRANCE_DEFAULT_GUN } from './src/config/guns.js';
 import { loadGunOffsets, loadDevSettings } from './src/browser/localStorageSettingsRepository.js';
 import { SceneManager } from './src/entrance/SceneManager.js';
 import { InteractionSystem } from './src/entrance/InteractionSystem.js';
+import { HoverPopup } from './src/entrance/HoverPopup.js';
 import {
   createEntranceEnvironment,
   createTrainingEnvironment,
@@ -60,8 +61,10 @@ let leftInputSource = null;
 let rightOffsetNode = null;
 let currentGun = null;
 let displayGunRoot = null;
+let displayGunPopupAnchor = null;
 let entranceEnvironment, trainingEnvironment;
 let settingsPanel;
+let hoverPopup;
 let laserLine = null, muzzleMarker = null, aimMarker = null;
 let equipRequest = 0;
 let displayRequest = 0;
@@ -94,6 +97,12 @@ function init() {
   renderer.xr.setReferenceSpaceType('local-floor');
   document.body.appendChild(renderer.domElement);
   document.body.appendChild(VRButton.createButton(renderer));
+
+  hoverPopup = new HoverPopup({
+    parent: scene,
+    getViewerCamera: () => renderer.xr.isPresenting ? renderer.xr.getCamera(camera) : camera,
+  });
+  interactionSystem.addHoverChangedListener((interaction) => hoverPopup.setInteraction(interaction));
 
   scene.add(new THREE.HemisphereLight(0xc8dcff, 0x11141d, 2.2));
   const keyLight = new THREE.DirectionalLight(0xffffff, 2.8);
@@ -259,13 +268,22 @@ async function showSelectionGun(gunId) {
       interactionSystem.unregister(displayGunRoot);
       displayGunRoot.removeFromParent();
     }
+    displayGunPopupAnchor?.removeFromParent();
     displayGunRoot = gunRoot;
     const { position, rotation } = gun.selectionDisplayTransform;
     gunRoot.position.set(position.x, position.y, position.z);
     gunRoot.rotation.set(rotation.x, rotation.y, rotation.z);
     gunRoot.scale.setScalar(devSettings.gunScale);
     entranceEnvironment.selectionDisplay.mount.add(gunRoot);
-    entranceEnvironment.selectionDisplay.setGunName(gun.selectionName);
+
+    displayGunPopupAnchor = new THREE.Object3D();
+    displayGunPopupAnchor.name = `PopupAnchor:${gun.id}`;
+    displayGunPopupAnchor.position.set(
+      position.x + gun.selectionPopupOffset.x,
+      position.y + gun.selectionPopupOffset.y,
+      position.z + gun.selectionPopupOffset.z
+    );
+    entranceEnvironment.selectionDisplay.mount.add(displayGunPopupAnchor);
 
     const highlightMeshes = [];
     gunRoot.traverse((object) => {
@@ -274,6 +292,8 @@ async function showSelectionGun(gunId) {
     interactionSystem.register(gunRoot, {
       action: () => equipGun(gun.id),
       highlightMeshes,
+      hoverInfo: { title: gun.selectionName },
+      popupAnchor: displayGunPopupAnchor,
     });
     statusEl.textContent = `${gun.selectionName} displayed. Shoot the gun model to equip it.`;
   } catch (error) {

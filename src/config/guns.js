@@ -8,6 +8,7 @@ export const GUNS = Object.freeze({
     modelUrl: assetUrl('desert_eagle_black.glb'),
     capacity: 16,
     ammoDisplayOffset: Object.freeze({ x: 0, y: 0.055, z: 0.10 }),
+    selectionPopupOffset: Object.freeze({ x: 0, y: 0.28, z: 0 }),
     selectionDisplayTransform: Object.freeze({
       position: Object.freeze({ x: 0.05, y: -0.086, z: 0.4 }),
       rotation: Object.freeze({
@@ -25,6 +26,7 @@ export const GUNS = Object.freeze({
     modelUrl: assetUrl('colt_python_357.glb'),
     capacity: 6,
     ammoDisplayOffset: Object.freeze({ x: 0, y: 0.055, z: 0.05 }),
+    selectionPopupOffset: Object.freeze({ x: 0, y: 0.28, z: 0 }),
     selectionDisplayTransform: Object.freeze({
       position: Object.freeze({ x: 0.05, y: -0.079, z: 0.4 }),
       rotation: Object.freeze({

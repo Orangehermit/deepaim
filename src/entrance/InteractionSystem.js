@@ -5,9 +5,15 @@ export class InteractionSystem {
     this.raycaster = new THREE.Raycaster();
     this.targets = [];
     this.hovered = null;
+    this.hoverChangedListeners = new Set();
   }
 
-  register(root, { action, highlightMeshes = [] }) {
+  register(root, {
+    action,
+    highlightMeshes = [],
+    hoverInfo = null,
+    popupAnchor = null,
+  }) {
     const materialStates = [];
     for (const mesh of highlightMeshes) {
       const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
@@ -18,8 +24,19 @@ export class InteractionSystem {
       }
     }
 
-    root.userData.deepAimInteraction = { root, action, materialStates };
+    root.userData.deepAimInteraction = {
+      root,
+      action,
+      materialStates,
+      hoverInfo,
+      popupAnchor,
+    };
     this.targets.push(root);
+  }
+
+  addHoverChangedListener(listener) {
+    this.hoverChangedListeners.add(listener);
+    return () => this.hoverChangedListeners.delete(listener);
   }
 
   unregister(root) {
@@ -45,7 +62,7 @@ export class InteractionSystem {
   }
 
   fireHovered() {
-    if (this.hovered) this.hovered.action();
+    if (this.hovered?.action) this.hovered.action();
   }
 
   clearHover() {
@@ -84,6 +101,10 @@ export class InteractionSystem {
       for (const state of this.hovered.materialStates) {
         state.material.emissive.setHex(0x3366ff);
       }
+    }
+
+    for (const listener of this.hoverChangedListeners) {
+      listener(this.hovered);
     }
   }
 }
