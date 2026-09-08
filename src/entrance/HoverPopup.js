@@ -14,10 +14,6 @@ const POPUP_BORDER_COLOR = '#415b78';
 const POPUP_TITLE_COLOR = '#eaf4ff';
 const POPUP_DESCRIPTION_COLOR = '#b9c9dc';
 const POPUP_FONT_FAMILY = 'Oxanium';
-const DIAGNOSTIC_MARKER_SIZE = 0.16;
-const DIAGNOSTIC_MARKER_OFFSET_Y = 0.24;
-const DIAGNOSTIC_DRAW_OK_COLOR = 0x00e5ff;
-const DIAGNOSTIC_DRAW_ERROR_COLOR = 0xff1744;
 
 function fontString(weight, size) {
   return `${weight} ${size}px "${POPUP_FONT_FAMILY}", sans-serif`;
@@ -55,7 +51,7 @@ export class HoverPopup {
     const material = new THREE.MeshBasicMaterial({
       map: this.texture,
       transparent: false,
-      depthWrite: false,
+      depthWrite: true,
       side: THREE.FrontSide,
     });
 
@@ -75,25 +71,6 @@ export class HoverPopup {
     this.root.visible = false;
     this.root.raycast = () => {};
     parent.add(this.root);
-
-    // Temporary Quest diagnostic. This untextured sprite uses a completely
-    // separate render path from the CanvasTexture popup:
-    // cyan = hover notification reached setInteraction() and draw() completed;
-    // red = Canvas 2D drawing threw before the popup could be displayed.
-    this.diagnosticMarker = new THREE.Sprite(
-      new THREE.SpriteMaterial({
-        color: DIAGNOSTIC_DRAW_OK_COLOR,
-        depthTest: false,
-        depthWrite: false,
-        fog: false,
-      })
-    );
-    this.diagnosticMarker.name = 'HoverPopupDiagnosticMarker';
-    this.diagnosticMarker.scale.setScalar(DIAGNOSTIC_MARKER_SIZE);
-    this.diagnosticMarker.visible = false;
-    this.diagnosticMarker.renderOrder = 10000;
-    this.diagnosticMarker.raycast = () => {};
-    parent.add(this.diagnosticMarker);
 
     this.loadFont();
   }
@@ -123,10 +100,6 @@ export class HoverPopup {
     const anchor = interaction.popupAnchor || interaction.root;
     anchor.getWorldPosition(this.anchorWorldPosition);
     this.root.position.copy(this.anchorWorldPosition);
-    this.diagnosticMarker.position.copy(this.anchorWorldPosition);
-    this.diagnosticMarker.position.y += DIAGNOSTIC_MARKER_OFFSET_Y;
-    this.diagnosticMarker.material.color.setHex(DIAGNOSTIC_DRAW_OK_COLOR);
-    this.diagnosticMarker.visible = true;
 
     const viewerCamera = this.getViewerCamera?.();
     if (viewerCamera) {
@@ -134,12 +107,7 @@ export class HoverPopup {
       this.root.lookAt(this.viewerWorldPosition);
     }
 
-    try {
-      this.draw();
-    } catch (error) {
-      this.diagnosticMarker.material.color.setHex(DIAGNOSTIC_DRAW_ERROR_COLOR);
-      console.error('Hover popup Canvas drawing failed:', error);
-    }
+    this.draw();
 
     this.root.visible = true;
   }
@@ -185,6 +153,5 @@ export class HoverPopup {
 
   hide() {
     this.root.visible = false;
-    this.diagnosticMarker.visible = false;
   }
 }
