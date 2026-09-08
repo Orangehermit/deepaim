@@ -14,24 +14,24 @@ const WHITEBOARD_SECTIONS = Object.freeze([
     id: 'weapon_type',
     title: 'WEAPON TYPE',
     items: Object.freeze([
-      Object.freeze({ id: 'desert_eagle', label: 'PISTOL', selected: true, hoverInfo: Object.freeze({ title: 'PISTOL', scale: 0.4 }) }),
-      Object.freeze({ id: 'colt_python', label: 'REVOLVER', hoverInfo: Object.freeze({ title: 'REVOLVER', scale: 0.4 }) }),
+      Object.freeze({ id: 'desert_eagle', label: 'PISTOL', selected: true, hoverInfo: Object.freeze({ title: 'PISTOL', scale: 0.75 }) }),
+      Object.freeze({ id: 'colt_python', label: 'REVOLVER', hoverInfo: Object.freeze({ title: 'REVOLVER', scale: 0.75 }) }),
     ]),
   }),
   Object.freeze({
     id: 'style',
     title: 'STYLE',
     items: Object.freeze([
-      Object.freeze({ id: 'single', label: 'SINGLE', selected: true, hoverInfo: Object.freeze({ title: 'SINGLE', scale: 0.4 }) }),
-      Object.freeze({ id: 'akimbo', label: 'AKIMBO', hoverInfo: Object.freeze({ title: 'AKIMBO', scale: 0.4 }) }),
+      Object.freeze({ id: 'single', label: 'SINGLE', selected: true, hoverInfo: Object.freeze({ title: 'SINGLE', scale: 0.75 }) }),
+      Object.freeze({ id: 'akimbo', label: 'AKIMBO', hoverInfo: Object.freeze({ title: 'AKIMBO', scale: 0.75 }) }),
     ]),
   }),
   Object.freeze({
     id: 'modifier',
     title: 'MODIFIER',
     items: Object.freeze([
-      Object.freeze({ id: 'laser_sight', label: 'LASER SIGHT', hoverInfo: Object.freeze({ title: 'LASER SIGHT', scale: 0.4 }) }),
-      Object.freeze({ id: 'infinite_ammo', label: '∞ AMMO', hoverInfo: Object.freeze({ title: 'INFINITE AMMO', scale: 0.4 }) }),
+      Object.freeze({ id: 'laser_sight', label: 'LASER SIGHT', hoverInfo: Object.freeze({ title: 'LASER SIGHT', scale: 0.75 }) }),
+      Object.freeze({ id: 'infinite_ammo', label: '∞ AMMO', hoverInfo: Object.freeze({ title: 'INFINITE AMMO', scale: 0.75 }) }),
     ]),
   }),
 ]);
