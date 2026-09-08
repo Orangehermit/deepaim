@@ -47,15 +47,26 @@ export class HoverPopup {
     this.texture.wrapS = THREE.ClampToEdgeWrapping;
     this.texture.wrapT = THREE.ClampToEdgeWrapping;
 
-    this.root = new THREE.Mesh(
-      new THREE.PlaneGeometry(POPUP_WORLD_WIDTH, POPUP_WORLD_HEIGHT),
-      new THREE.MeshBasicMaterial({
-        map: this.texture,
-        transparent: false,
-        depthWrite: false,
-        side: THREE.FrontSide,
-      })
-    );
+    const geometry = new THREE.PlaneGeometry(POPUP_WORLD_WIDTH, POPUP_WORLD_HEIGHT);
+    const material = new THREE.MeshBasicMaterial({
+      map: this.texture,
+      transparent: false,
+      depthWrite: false,
+      side: THREE.FrontSide,
+    });
+
+    // Use two independently front-facing planes instead of DoubleSide. A
+    // DoubleSide material exposes the back of the same UVs and mirrors text.
+    // Rotating a second plane also rotates its UV orientation, so either side
+    // remains readable if the XR viewer pose is stale when hover begins.
+    const frontPlane = new THREE.Mesh(geometry, material);
+    const backPlane = new THREE.Mesh(geometry, material);
+    backPlane.rotation.y = Math.PI;
+    frontPlane.raycast = () => {};
+    backPlane.raycast = () => {};
+
+    this.root = new THREE.Group();
+    this.root.add(frontPlane, backPlane);
     this.root.name = 'HoverPopup';
     this.root.visible = false;
     this.root.raycast = () => {};
