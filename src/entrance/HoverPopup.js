@@ -1,11 +1,12 @@
 import * as THREE from 'three';
 import { createTextPlane } from './TextPlaneFactory.js';
 
-const POPUP_TITLE_HEIGHT = 0.16;
-const POPUP_DESCRIPTION_HEIGHT = 0.085;
-const POPUP_PADDING_X = 0.07;
-const POPUP_PADDING_Y = 0.055;
-const POPUP_CONTENT_GAP = 0.035;
+const POPUP_TITLE_HEIGHT = 0.12;
+const POPUP_DESCRIPTION_HEIGHT = 0.07;
+const POPUP_PADDING_X = 0.06;
+const POPUP_PADDING_Y = 0.045;
+const POPUP_CONTENT_GAP = 0.025;
+const POPUP_BACKGROUND_COLOR = 0x101b2a;
 
 export class HoverPopup {
   constructor({ parent, getViewerCamera }) {
@@ -21,9 +22,8 @@ export class HoverPopup {
     this.background = new THREE.Mesh(
       new THREE.PlaneGeometry(1, 1),
       new THREE.MeshBasicMaterial({
-        color: 0x101b2a,
-        transparent: true,
-        opacity: 0.88,
+        color: POPUP_BACKGROUND_COLOR,
+        transparent: false,
         depthWrite: false,
         side: THREE.DoubleSide,
       })
@@ -36,6 +36,7 @@ export class HoverPopup {
     this.title = createTextPlane('INFO', { height: POPUP_TITLE_HEIGHT });
     this.title.name = 'HoverPopupTitle';
     this.title.position.z = 0.006;
+    this.title.material.side = THREE.DoubleSide;
 
     this.description = createTextPlane('INFO', {
       height: POPUP_DESCRIPTION_HEIGHT,
@@ -44,6 +45,7 @@ export class HoverPopup {
     });
     this.description.name = 'HoverPopupDescription';
     this.description.position.z = 0.006;
+    this.description.material.side = THREE.DoubleSide;
 
     this.root.add(this.background, this.title, this.description);
     parent.add(this.root);
@@ -55,7 +57,8 @@ export class HoverPopup {
       return;
     }
 
-    const { title, description = '' } = interaction.hoverInfo;
+    const { title, description = '', scale = 1 } = interaction.hoverInfo;
+    this.root.scale.setScalar(scale);
     this.title.userData.setText(title);
     this.description.userData.setText(description);
     this.description.visible = Boolean(description);

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { createTextPlane } from './TextPlaneFactory.js';
 
-export const WHITEBOARD_WIDTH = 2.4;
+export const WHITEBOARD_WIDTH = 3.6;
 export const WHITEBOARD_HEIGHT = 2.1;
 export const WHITEBOARD_DEPTH = 0.04;
 export const WHITEBOARD_WALL_OFFSET = 0.08;
@@ -17,9 +17,9 @@ const SUBCATEGORY_SLOT_GAP = 0.16;
 // The board lies in the Y/Z plane. These are the three independent section
 // origins along world Z, making later Quest-side layout tuning straightforward.
 export const WHITEBOARD_SECTION_Z = Object.freeze({
-  weapon_type: 0.80,
+  weapon_type: 1.20,
   style: 0,
-  modifier: -0.80,
+  modifier: -1.20,
 });
 
 function createSubcategoryButton({ label, selected = false, hoverInfo }) {
@@ -86,7 +86,7 @@ function createSection(definition) {
   root.position.z = WHITEBOARD_SECTION_Z[definition.id];
 
   const heading = createTextPlane(definition.title, {
-    color: '#27313d',
+    color: '#000000',
     height: MAIN_CATEGORY_TEXT_HEIGHT,
     fontFamily: 'Caveat',
     fontWeight: 700,
