@@ -58,7 +58,7 @@ function createSubcategoryButton({ label, selected = false, hoverInfo }) {
 
   const popupAnchor = new THREE.Object3D();
   popupAnchor.name = `PopupAnchor:${label}`;
-  popupAnchor.position.set(0, SUBCATEGORY_SLOT_SIZE * 0.72, 0.10);
+  popupAnchor.position.set(0, SUBCATEGORY_SLOT_SIZE * 0.72, 0.16);
 
   root.add(panel, iconPlane, temporaryLabel, popupAnchor);
 

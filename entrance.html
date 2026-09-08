@@ -299,7 +299,7 @@ async function showSelectionGun(gunId) {
     interactionSystem.register(gunRoot, {
       action: () => equipGun(gun.id),
       highlightMeshes,
-      hoverInfo: { title: gun.selectionName, scale: 0.3 },
+      hoverInfo: { title: gun.selectionName, scale: 0.25 },
       popupAnchor: displayGunPopupAnchor,
     });
     statusEl.textContent = `${gun.selectionName} displayed. Shoot the gun model to equip it.`;
