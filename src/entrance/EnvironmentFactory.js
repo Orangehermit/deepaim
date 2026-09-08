@@ -4,10 +4,10 @@ import { createSelectionWhiteboard } from './WhiteboardFactory.js?v=revision-09-
 
 // WebXR replaces the desktop camera transform with the headset pose, so the
 // stationary player's forward direction is -Z from the room origin.
-const SELECTION_DISPLAY_POSITION = new THREE.Vector3(-0.8, 0.0, 0.0);
-const SELECTION_DISPLAY_PLACEHOLDER_SIZE = Object.freeze({ x: 0.50, y: 0.80, z: 1.00 });
-const SELECTION_DISPLAY_GUN_CLEARANCE = 0.10;
-const SELECTION_DISPLAY_ITEM_HEIGHT = SELECTION_DISPLAY_PLACEHOLDER_SIZE.y + SELECTION_DISPLAY_GUN_CLEARANCE;
+const WORKBENCH_POSITION = new THREE.Vector3(-0.8, 0.0, 0.0);
+const WORKBENCH_SIZE = Object.freeze({ x: 0.50, y: 0.80, z: 1.00 });
+const WORKBENCH_ITEM_CLEARANCE = 0.10;
+const WORKBENCH_ITEM_HEIGHT = WORKBENCH_SIZE.y + WORKBENCH_ITEM_CLEARANCE;
 
 const WHITEBOARD_SECTIONS = Object.freeze([
   Object.freeze({
@@ -100,23 +100,23 @@ function addRoomShell(group, { width, depth, wallColor, floorColor }) {
   group.add(rightWall);
 }
 
-function createSelectionDisplay() {
+function createWorkbench() {
   const group = new THREE.Group();
-  group.name = 'WeaponSelectionDisplay';
-  group.position.copy(SELECTION_DISPLAY_POSITION);
+  group.name = 'Workbench';
+  group.position.copy(WORKBENCH_POSITION);
 
-  // This mount is the fixed replacement point for the future display GLB.
+  // This mount is the fixed replacement point for the future workbench GLB.
   // It is centered within a 0.50 × 0.80 × 1.00 m volume, with its bottom at floor level.
   const modelMount = new THREE.Group();
-  modelMount.name = 'SelectionDisplayModelMount';
-  modelMount.position.y = SELECTION_DISPLAY_PLACEHOLDER_SIZE.y / 2;
+  modelMount.name = 'WorkbenchModelMount';
+  modelMount.position.y = WORKBENCH_SIZE.y / 2;
   group.add(modelMount);
 
   const placeholder = new THREE.Mesh(
     new THREE.BoxGeometry(
-      SELECTION_DISPLAY_PLACEHOLDER_SIZE.x,
-      SELECTION_DISPLAY_PLACEHOLDER_SIZE.y,
-      SELECTION_DISPLAY_PLACEHOLDER_SIZE.z
+      WORKBENCH_SIZE.x,
+      WORKBENCH_SIZE.y,
+      WORKBENCH_SIZE.z
     ),
     new THREE.MeshStandardMaterial({
       color: 0x258dff,
@@ -126,7 +126,7 @@ function createSelectionDisplay() {
       roughness: 0.4,
     })
   );
-  placeholder.name = 'SelectionDisplayPlaceholder';
+  placeholder.name = 'WorkbenchPlaceholder';
   modelMount.add(placeholder);
 
   const placeholderEdges = new THREE.LineSegments(
@@ -135,14 +135,14 @@ function createSelectionDisplay() {
   );
   placeholder.add(placeholderEdges);
 
-  const mount = new THREE.Group();
-  mount.name = 'SelectionGunMount';
-  mount.position.set(0, SELECTION_DISPLAY_ITEM_HEIGHT, 0);
-  group.add(mount);
+  const itemMount = new THREE.Group();
+  itemMount.name = 'WorkbenchItemMount';
+  itemMount.position.set(0, WORKBENCH_ITEM_HEIGHT, 0);
+  group.add(itemMount);
 
   return {
     group,
-    mount,
+    itemMount,
     modelMount,
     placeholder,
   };
@@ -180,8 +180,8 @@ export function createEntranceEnvironment({
   const style = whiteboard.sections.get('style');
   const modifier = whiteboard.sections.get('modifier');
 
-  const selectionDisplay = createSelectionDisplay();
-  group.add(selectionDisplay.group);
+  const workbench = createWorkbench();
+  group.add(workbench.group);
 
   const interactives = [
     { root: frontDoor.root, action: onEnterTraining, highlightMeshes: frontDoor.highlightMeshes },
@@ -239,7 +239,7 @@ export function createEntranceEnvironment({
   return {
     group,
     interactives,
-    selectionDisplay,
+    workbench,
     whiteboard,
     getSelection: () => ({ selectedWeapon, selectedStyle, selectedModifiers: new Set(selectedModifiers) }),
   };

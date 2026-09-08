@@ -39,7 +39,7 @@
 import * as THREE from 'three';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { GUNS, ENTRANCE_DEFAULT_GUN } from './src/config/guns.js';
+import { GUNS, ENTRANCE_DEFAULT_GUN } from './src/config/guns.js?v=workbench-01';
 import { loadGunOffsets, loadDevSettings } from './src/browser/localStorageSettingsRepository.js';
 import { SceneManager } from './src/entrance/SceneManager.js';
 import { InteractionSystem } from './src/entrance/InteractionSystem.js';
@@ -47,7 +47,7 @@ import { HoverPopup } from './src/entrance/HoverPopup.js?v=revision-07';
 import {
   createEntranceEnvironment,
   createTrainingEnvironment,
-} from './src/entrance/EnvironmentFactory.js?v=revision-09-caveat';
+} from './src/entrance/EnvironmentFactory.js?v=revision-10-workbench';
 import { SettingsPanel } from './src/entrance/SettingsPanel.js';
 import { createTextPlane } from './src/entrance/TextPlaneFactory.js';
 
@@ -60,14 +60,14 @@ let rightController = null;
 let leftInputSource = null;
 let rightOffsetNode = null;
 let currentGun = null;
-let displayGunRoot = null;
-let displayGunPopupAnchor = null;
+let workbenchItemRoot = null;
+let workbenchItemPopupAnchor = null;
 let entranceEnvironment, trainingEnvironment;
 let settingsPanel;
 let hoverPopup;
 let laserLine = null, muzzleMarker = null, aimMarker = null;
 let equipRequest = 0;
-let displayRequest = 0;
+let workbenchLoadRequest = 0;
 
 const clock = new THREE.Clock();
 const loader = new GLTFLoader();
@@ -136,7 +136,7 @@ function init() {
   });
   setupControllers();
   equipGun(ENTRANCE_DEFAULT_GUN.id);
-  showSelectionGun(ENTRANCE_DEFAULT_GUN.id);
+  showGunOnWorkbench(ENTRANCE_DEFAULT_GUN.id);
 
   renderer.xr.addEventListener('sessionstart', () => {
     statusEl.textContent = 'VR ACTIVE\n右手の銃口レーザーでEntranceを操作します。';
@@ -256,41 +256,41 @@ async function equipGun(gunId) {
 }
 
 function selectWeaponType(gunId) {
-  // Category selection updates both the showcase and the weapon held by the
+  // Category selection updates both the workbench and the weapon held by the
   // player. Each operation retains its own stale-request protection.
-  showSelectionGun(gunId);
+  showGunOnWorkbench(gunId);
   equipGun(gunId);
 }
 
-async function showSelectionGun(gunId) {
+async function showGunOnWorkbench(gunId) {
   const gun = GUNS[gunId];
   if (!gun) return;
-  const requestId = ++displayRequest;
-  statusEl.textContent = `Loading ${gun.selectionName} display...`;
+  const requestId = ++workbenchLoadRequest;
+  statusEl.textContent = `Loading ${gun.workbenchLabel} for workbench...`;
   try {
     const { gunRoot } = await createGunInstance(gun, { cloneMaterials: true });
-    if (requestId !== displayRequest) return;
+    if (requestId !== workbenchLoadRequest) return;
 
-    if (displayGunRoot) {
-      interactionSystem.unregister(displayGunRoot);
-      displayGunRoot.removeFromParent();
+    if (workbenchItemRoot) {
+      interactionSystem.unregister(workbenchItemRoot);
+      workbenchItemRoot.removeFromParent();
     }
-    displayGunPopupAnchor?.removeFromParent();
-    displayGunRoot = gunRoot;
-    const { position, rotation } = gun.selectionDisplayTransform;
+    workbenchItemPopupAnchor?.removeFromParent();
+    workbenchItemRoot = gunRoot;
+    const { position, rotation } = gun.workbenchTransform;
     gunRoot.position.set(position.x, position.y, position.z);
     gunRoot.rotation.set(rotation.x, rotation.y, rotation.z);
     gunRoot.scale.setScalar(devSettings.gunScale);
-    entranceEnvironment.selectionDisplay.mount.add(gunRoot);
+    entranceEnvironment.workbench.itemMount.add(gunRoot);
 
-    displayGunPopupAnchor = new THREE.Object3D();
-    displayGunPopupAnchor.name = `PopupAnchor:${gun.id}`;
-    displayGunPopupAnchor.position.set(
-      position.x + gun.selectionPopupOffset.x,
-      position.y + gun.selectionPopupOffset.y,
-      position.z + gun.selectionPopupOffset.z
+    workbenchItemPopupAnchor = new THREE.Object3D();
+    workbenchItemPopupAnchor.name = `PopupAnchor:${gun.id}`;
+    workbenchItemPopupAnchor.position.set(
+      position.x + gun.workbenchPopupOffset.x,
+      position.y + gun.workbenchPopupOffset.y,
+      position.z + gun.workbenchPopupOffset.z
     );
-    entranceEnvironment.selectionDisplay.mount.add(displayGunPopupAnchor);
+    entranceEnvironment.workbench.itemMount.add(workbenchItemPopupAnchor);
 
     const highlightMeshes = [];
     gunRoot.traverse((object) => {
@@ -299,13 +299,13 @@ async function showSelectionGun(gunId) {
     interactionSystem.register(gunRoot, {
       action: () => equipGun(gun.id),
       highlightMeshes,
-      hoverInfo: { title: gun.selectionName, scale: 0.25 },
-      popupAnchor: displayGunPopupAnchor,
+      hoverInfo: { title: gun.workbenchLabel, scale: 0.25 },
+      popupAnchor: workbenchItemPopupAnchor,
     });
-    statusEl.textContent = `${gun.selectionName} displayed. Shoot the gun model to equip it.`;
+    statusEl.textContent = `${gun.workbenchLabel} placed on workbench. Shoot the gun model to equip it.`;
   } catch (error) {
-    console.error(`Failed to display ${gun.displayName}:`, error);
-    statusEl.textContent = `ERROR: Failed to display ${gun.selectionName}.`;
+    console.error(`Failed to place ${gun.displayName} on workbench:`, error);
+    statusEl.textContent = `ERROR: Failed to place ${gun.workbenchLabel} on workbench.`;
   }
 }
 
@@ -334,7 +334,7 @@ function applyGunTransform() {
     rightOffsetNode.position.set(offsets.offsetX, offsets.offsetY, offsets.offsetZ);
   }
   currentGun.gunRoot.scale.setScalar(devSettings.gunScale);
-  if (displayGunRoot) displayGunRoot.scale.setScalar(devSettings.gunScale);
+  if (workbenchItemRoot) workbenchItemRoot.scale.setScalar(devSettings.gunScale);
 }
 
 function ensureLaserObjects() {
@@ -447,7 +447,7 @@ function updateBullets(delta) {
 function showEntrance() {
   sceneManager.showEntrance();
   interactionSystem.clearHover();
-  statusEl.textContent = 'Entrance restored. Select a category or shoot the displayed gun.';
+  statusEl.textContent = 'Entrance restored. Select a category or shoot the gun on the workbench.';
 }
 
 function showTraining() {
