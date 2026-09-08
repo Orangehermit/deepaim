@@ -88,11 +88,6 @@ function createSection(definition) {
   const heading = createTextPlane(definition.title, {
     color: '#000000',
     height: MAIN_CATEGORY_TEXT_HEIGHT,
-    fontFamily: 'Caveat',
-    fontWeight: 700,
-    fontSize: 96,
-    fontFallback: 'cursive',
-    waitForFont: true,
   });
   heading.name = `MainCategoryHeading:${definition.id}`;
   heading.position.set(WHITEBOARD_FRONT_OFFSET, 0.70, 0);

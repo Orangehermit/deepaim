@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { createTextPlane } from './TextPlaneFactory.js';
-import { createSelectionWhiteboard } from './WhiteboardFactory.js';
+import { createSelectionWhiteboard } from './WhiteboardFactory.js?v=revision-08-oxanium-test';
 
 // WebXR replaces the desktop camera transform with the headset pose, so the
 // stationary player's forward direction is -Z from the room origin.
