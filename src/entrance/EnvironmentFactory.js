@@ -4,7 +4,7 @@ import { createSelectionWhiteboard } from './WhiteboardFactory.js?v=revision-09-
 
 // WebXR replaces the desktop camera transform with the headset pose, so the
 // stationary player's forward direction is -Z from the room origin.
-const SELECTION_DISPLAY_POSITION = new THREE.Vector3(-0.6, 0.0, 0.0);
+const SELECTION_DISPLAY_POSITION = new THREE.Vector3(-0.8, 0.0, 0.0);
 const SELECTION_DISPLAY_PLACEHOLDER_SIZE = Object.freeze({ x: 0.50, y: 0.80, z: 1.00 });
 const SELECTION_DISPLAY_GUN_CLEARANCE = 0.10;
 const SELECTION_DISPLAY_ITEM_HEIGHT = SELECTION_DISPLAY_PLACEHOLDER_SIZE.y + SELECTION_DISPLAY_GUN_CLEARANCE;
