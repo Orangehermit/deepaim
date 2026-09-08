@@ -113,7 +113,7 @@ function init() {
     onEnterTraining: showTraining,
     onExit: requestExit,
     onRightSideDoor: showRightSidePlaceholder,
-    onSelectWeaponType: showSelectionGun,
+    onSelectWeaponType: selectWeaponType,
     onSelectionChanged: showSelectionStatus,
   });
   trainingEnvironment = createTrainingEnvironment({ onReturnEntrance: showEntrance });
@@ -253,6 +253,13 @@ async function equipGun(gunId) {
     console.error('Failed to equip gun:', error);
     statusEl.textContent = `ERROR: Failed to load ${gun.displayName}.`;
   }
+}
+
+function selectWeaponType(gunId) {
+  // Category selection updates both the showcase and the weapon held by the
+  // player. Each operation retains its own stale-request protection.
+  showSelectionGun(gunId);
+  equipGun(gunId);
 }
 
 async function showSelectionGun(gunId) {

@@ -36,7 +36,6 @@ export class HoverPopup {
     this.title = createTextPlane('INFO', { height: POPUP_TITLE_HEIGHT });
     this.title.name = 'HoverPopupTitle';
     this.title.position.z = 0.006;
-    this.title.material.side = THREE.DoubleSide;
 
     this.description = createTextPlane('INFO', {
       height: POPUP_DESCRIPTION_HEIGHT,
@@ -45,7 +44,6 @@ export class HoverPopup {
     });
     this.description.name = 'HoverPopupDescription';
     this.description.position.z = 0.006;
-    this.description.material.side = THREE.DoubleSide;
 
     this.root.add(this.background, this.title, this.description);
     parent.add(this.root);
