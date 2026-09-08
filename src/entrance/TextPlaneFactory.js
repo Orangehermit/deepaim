@@ -38,7 +38,10 @@ export function createTextPlane(text, {
   const context = canvas.getContext('2d');
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
-
+  texture.generateMipmaps = false;
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  
   const material = new THREE.MeshBasicMaterial({
     map: texture,
     transparent: true,
