@@ -96,8 +96,8 @@
             targetSequence: {
                 count: 10,
                 initialDelay: 1.0,
-                visibleDurationMin: 1.5,
-                visibleDurationMax: 2.5,
+                visibleDurationMin: 4.0,
+                visibleDurationMax: 4.0,
                 gapDurationMin: 1.0,
                 gapDurationMax: 3.0,
                 sideMargin: 2.0,
@@ -123,6 +123,7 @@
             },
             gun: {
                 rayDistance: 100,
+                tracerDuration: 0.06,
                 hitPriorityDistanceTolerance: 0.08,
                 gunshotAudioFile: 'gunshot_pistol.wav',
                 hapticsIntensity: 0.5,
@@ -759,6 +760,14 @@
         const muzzleWorld = new THREE.Vector3();
         const aimWorld = new THREE.Vector3();
         const shotDirection = new THREE.Vector3();
+        const tracerMaterial = new THREE.LineBasicMaterial({
+            color: 0xfff27a,
+            transparent: true,
+            opacity: 0.95,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+        });
+        const activeTracers = [];
 
         let loadedGun = null;
         let rightController = null;
@@ -904,6 +913,33 @@
             return overlappingHits[0];
         }
 
+        function createShotTracer(origin, endPoint) {
+            const geometry = new THREE.BufferGeometry().setFromPoints([
+                origin.clone(),
+                endPoint.clone()
+            ]);
+            const tracer = new THREE.Line(geometry, tracerMaterial);
+            tracer.name = 'SHOT_TRACER';
+            tracer.frustumCulled = false;
+            scene.add(tracer);
+            activeTracers.push({
+                object: tracer,
+                remaining: CONFIG.gun.tracerDuration
+            });
+        }
+
+        function updateShotTracers(dt) {
+            for (let index = activeTracers.length - 1; index >= 0; index--) {
+                const tracer = activeTracers[index];
+                tracer.remaining -= dt;
+                if (tracer.remaining > 0) continue;
+
+                scene.remove(tracer.object);
+                tracer.object.geometry.dispose();
+                activeTracers.splice(index, 1);
+            }
+        }
+
         function fireDesertEagle() {
             const shotPose = getShotPose();
             if (!shotPose) return;
@@ -912,6 +948,13 @@
             pulseRightController();
 
             const hit = findTargetHit(shotPose.origin, shotPose.direction);
+            const tracerEnd = hit
+                ? hit.point
+                : shotPose.origin.clone().addScaledVector(
+                    shotPose.direction,
+                    CONFIG.gun.rayDistance
+                );
+            createShotTracer(shotPose.origin, tracerEnd);
             if (!hit) return;
 
             console.log(`Hit: ${hit.object.userData.hitZone}`);
@@ -1120,6 +1163,7 @@
 
             updateButtonInteraction(dt);
             updateTargetSequence(dt);
+            updateShotTracers(dt);
             renderer.render(scene, camera);
         });
     </script>
