@@ -101,6 +101,14 @@
                 audioMaxDistance: 30.0,
                 audioRolloffFactor: 1.0
             },
+            targetVisual: {
+                totalHeight: 1.70,
+                headDiameter: 0.30,
+                headBodyGap: 0.05,
+                bodyWidth: 0.70,
+                bodyHeight: 1.35,
+                chestDiameter: 0.30
+            },
             interaction: {
                 controllerContactRadius: 0.055,
                 controllerContactOffsetZ: -0.08,
@@ -331,6 +339,18 @@
             return segment;
         }
 
+        function createInvertedTriangleGeometry(width, height) {
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+                -width / 2,  height / 2, 0,
+                 width / 2,  height / 2, 0,
+                         0, -height / 2, 0
+            ]), 3));
+            geometry.setIndex([0, 1, 2]);
+            geometry.computeVertexNormals();
+            return geometry;
+        }
+
         function createHologramTarget() {
             const target = new THREE.Group();
             target.name = 'HOLOGRAM_TARGET';
@@ -340,16 +360,24 @@
             visual.name = 'VISUAL';
             target.add(visual);
 
-            const hologramMaterial = new THREE.MeshBasicMaterial({
+            const outlineMaterial = new THREE.MeshBasicMaterial({
                 color: 0x35d9ff,
                 transparent: true,
-                opacity: 0.48,
+                opacity: 0.72,
                 blending: THREE.AdditiveBlending,
                 depthWrite: false,
                 side: THREE.DoubleSide
             });
-            const brightMaterial = new THREE.MeshBasicMaterial({
-                color: 0xa8f5ff,
+            const bodyFillMaterial = new THREE.MeshBasicMaterial({
+                color: 0x35d9ff,
+                transparent: true,
+                opacity: 0.18,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                side: THREE.DoubleSide
+            });
+            const chestMaterial = new THREE.MeshBasicMaterial({
+                color: 0xff304e,
                 transparent: true,
                 opacity: 0.92,
                 blending: THREE.AdditiveBlending,
@@ -357,82 +385,109 @@
                 side: THREE.DoubleSide
             });
 
-            const headOutline = new THREE.Mesh(
-                new THREE.RingGeometry(0.22, 0.28, 24),
-                hologramMaterial
+            const dimensions = CONFIG.targetVisual;
+            const halfHeight = dimensions.totalHeight / 2;
+            const headRadius = dimensions.headDiameter / 2;
+            const chestRadius = dimensions.chestDiameter / 2;
+            const bodyBottomY = -halfHeight;
+            const bodyTopY = bodyBottomY + dimensions.bodyHeight;
+            const bodyCenterY = (bodyTopY + bodyBottomY) / 2;
+            const headCenterY = bodyTopY + dimensions.headBodyGap + headRadius;
+            const chestCenterY = bodyTopY - dimensions.chestDiameter;
+
+            // 円そのものがHead Shot Zone。内部に別のSweet Spotは作らない。
+            const headVisual = new THREE.Mesh(
+                new THREE.RingGeometry(Math.max(0.001, headRadius - 0.025), headRadius, 28),
+                outlineMaterial
             );
-            headOutline.position.set(0, 0.72, 0);
-            visual.add(headOutline);
+            headVisual.name = 'HEAD_VISUAL';
+            headVisual.position.set(0, headCenterY, 0);
+            visual.add(headVisual);
 
-            // 胴体、肩、腕、腰を低ポリゴンの細い直方体で表現する。
-            addHologramSegment(visual, -0.43, 0.30, 0.43, 0.30, 0.055, hologramMaterial);
-            addHologramSegment(visual, -0.43, 0.30, -0.56, -0.20, 0.055, hologramMaterial);
-            addHologramSegment(visual, 0.43, 0.30, 0.56, -0.20, 0.055, hologramMaterial);
-            addHologramSegment(visual, -0.43, 0.30, -0.31, -0.58, 0.055, hologramMaterial);
-            addHologramSegment(visual, 0.43, 0.30, 0.31, -0.58, 0.055, hologramMaterial);
-            addHologramSegment(visual, -0.31, -0.58, 0.31, -0.58, 0.055, hologramMaterial);
-
-            // わずかな走査線で、ライトを使わず発光するホログラム感を補う。
-            for (const y of [0.08, -0.18, -0.42]) {
-                const scanLine = new THREE.Mesh(
-                    new THREE.BoxGeometry(0.70 - Math.abs(y) * 0.25, 0.018, 0.025),
-                    hologramMaterial
-                );
-                scanLine.position.set(0, y, 0.015);
-                visual.add(scanLine);
-            }
-
-            const headSweetSpot = new THREE.Mesh(
-                new THREE.RingGeometry(0.075, 0.115, 20),
-                brightMaterial
+            // 頭以外は、半透明面と3辺の輪郭からなる逆三角形だけで表現する。
+            const bodyVisual = new THREE.Group();
+            bodyVisual.name = 'BODY_VISUAL';
+            bodyVisual.position.y = bodyCenterY;
+            const bodyFace = new THREE.Mesh(
+                createInvertedTriangleGeometry(dimensions.bodyWidth, dimensions.bodyHeight),
+                bodyFillMaterial
             );
-            headSweetSpot.name = 'HEAD_SWEET_SPOT';
-            headSweetSpot.position.set(0, 0.72, 0.035);
-            headSweetSpot.userData.hitZone = 'head';
-            visual.add(headSweetSpot);
-
-            const heartSweetSpot = new THREE.Mesh(
-                new THREE.RingGeometry(0.07, 0.115, 20),
-                brightMaterial
+            bodyVisual.add(bodyFace);
+            const bodyHalfWidth = dimensions.bodyWidth / 2;
+            const bodyHalfHeight = dimensions.bodyHeight / 2;
+            addHologramSegment(
+                bodyVisual,
+                -bodyHalfWidth, bodyHalfHeight,
+                bodyHalfWidth, bodyHalfHeight,
+                0.03,
+                outlineMaterial
             );
-            heartSweetSpot.name = 'HEART_SWEET_SPOT';
-            heartSweetSpot.position.set(-0.14, 0.08, 0.04);
-            heartSweetSpot.userData.hitZone = 'heart';
-            visual.add(heartSweetSpot);
+            addHologramSegment(
+                bodyVisual,
+                -bodyHalfWidth, bodyHalfHeight,
+                0, -bodyHalfHeight,
+                0.03,
+                outlineMaterial
+            );
+            addHologramSegment(
+                bodyVisual,
+                bodyHalfWidth, bodyHalfHeight,
+                0, -bodyHalfHeight,
+                0.03,
+                outlineMaterial
+            );
+            visual.add(bodyVisual);
+
+            const chestVisual = new THREE.Mesh(
+                new THREE.CircleGeometry(chestRadius, 24),
+                chestMaterial
+            );
+            chestVisual.name = 'CHEST_VISUAL';
+            chestVisual.position.set(0, chestCenterY, 0.04);
+            visual.add(chestVisual);
 
             // Materialだけを不可視にし、将来のRaycasterがMeshを識別できるようにする。
-            const hitboxMaterial = new THREE.MeshBasicMaterial({ visible: false });
-            const bodyHitbox = new THREE.Mesh(
-                new THREE.BoxGeometry(0.92, 1.0, 0.28),
-                hitboxMaterial
-            );
-            bodyHitbox.name = 'BODY_HITBOX';
-            bodyHitbox.position.set(0, -0.12, 0);
-            bodyHitbox.userData.hitZone = 'body';
-            bodyHitbox.userData.isTargetHitbox = true;
-            target.add(bodyHitbox);
+            const hitboxMaterial = new THREE.MeshBasicMaterial({
+                visible: false,
+                side: THREE.DoubleSide
+            });
 
             const headHitbox = new THREE.Mesh(
-                new THREE.SphereGeometry(0.29, 12, 8),
+                new THREE.CircleGeometry(headRadius, 24),
                 hitboxMaterial
             );
             headHitbox.name = 'HEAD_HITBOX';
-            headHitbox.position.set(0, 0.72, 0);
+            headHitbox.position.set(0, headCenterY, 0.01);
             headHitbox.userData.hitZone = 'head';
             headHitbox.userData.isTargetHitbox = true;
+            headHitbox.userData.hitPriority = 20;
             target.add(headHitbox);
 
-            const heartHitbox = new THREE.Mesh(
-                new THREE.SphereGeometry(0.15, 10, 6),
+            const bodyHitbox = new THREE.Mesh(
+                createInvertedTriangleGeometry(dimensions.bodyWidth, dimensions.bodyHeight),
                 hitboxMaterial
             );
-            heartHitbox.name = 'HEART_HITBOX';
-            heartHitbox.position.set(-0.14, 0.08, 0.02);
-            heartHitbox.userData.hitZone = 'heart';
-            heartHitbox.userData.isTargetHitbox = true;
-            target.add(heartHitbox);
+            bodyHitbox.name = 'BODY_HITBOX';
+            bodyHitbox.position.set(0, bodyCenterY, 0);
+            bodyHitbox.userData.hitZone = 'body';
+            bodyHitbox.userData.isTargetHitbox = true;
+            bodyHitbox.userData.hitPriority = 10;
+            target.add(bodyHitbox);
 
-            target.userData.hitboxes = [bodyHitbox, headHitbox, heartHitbox];
+            const chestHitbox = new THREE.Mesh(
+                new THREE.CircleGeometry(chestRadius, 24),
+                hitboxMaterial
+            );
+            chestHitbox.name = 'CHEST_HITBOX';
+            chestHitbox.position.set(0, chestCenterY, 0.05);
+            chestHitbox.userData.hitZone = 'chest';
+            chestHitbox.userData.isTargetHitbox = true;
+            chestHitbox.userData.hitPriority = 30;
+            target.add(chestHitbox);
+
+            // 胸はBodyより手前かつ高priorityとし、将来のRaycasterで優先可能にする。
+            target.userData.hitboxes = [chestHitbox, headHitbox, bodyHitbox];
+            target.userData.hitboxPriority = ['chest', 'head', 'body'];
             target.visible = false;
             return target;
         }
