@@ -106,6 +106,8 @@
                 frontMarginFromDesk: 3.0,
                 minY: 1.2,
                 ceilingMargin: 1.2,
+                groundSpawnProbability: 0.70,
+                floorClearance: 0.02,
                 minDistanceFromPrevious: 2.0,
                 maxPositionAttempts: 20,
                 audioFile: 'target_spawn.wav',
@@ -127,6 +129,7 @@
                 rayDistance: 100,
                 hitPriorityDistanceTolerance: 0.08,
                 gunshotAudioFile: 'gunshot_pistol.wav',
+                gunshotVolume: 0.35,
                 hapticsIntensity: 0.5,
                 hapticsDurationMs: 30,
                 triggerDebounceMs: 120
@@ -138,7 +141,7 @@
                 endWidthScale: 0.35,
                 startOpacity: 0.95,
                 endOpacity: 0.18,
-                segmentFill: 0.96
+                segmentFill: 1.0
             },
             interaction: {
                 controllerContactRadius: 0.055,
@@ -585,13 +588,33 @@
             }
         );
 
+        // Target Group原点からVisual/Hitbox全体の上下端までを実Geometryから取得する。
+        hologramTarget.updateWorldMatrix(true, true);
+        const targetOriginAtRest = new THREE.Vector3();
+        hologramTarget.getWorldPosition(targetOriginAtRest);
+        const targetBoundsAtRest = new THREE.Box3().setFromObject(hologramTarget);
+        const targetVerticalOffsets = {
+            min: targetBoundsAtRest.min.y - targetOriginAtRest.y,
+            max: targetBoundsAtRest.max.y - targetOriginAtRest.y
+        };
+
         function getTargetSpawnBounds() {
             const targetConfig = CONFIG.targetSequence;
+            const groundY = -targetVerticalOffsets.min + targetConfig.floorClearance;
+            const ceilingSafeMaxY = CONFIG.room.height -
+                targetVerticalOffsets.max - targetConfig.floorClearance;
+            const maxY = Math.max(
+                groundY,
+                Math.min(CONFIG.room.height - targetConfig.ceilingMargin, ceilingSafeMaxY)
+            );
+            const airMinY = Math.min(maxY, Math.max(targetConfig.minY, groundY));
             const bounds = {
                 minX: -CONFIG.room.width / 2 + targetConfig.sideMargin,
                 maxX: CONFIG.room.width / 2 - targetConfig.sideMargin,
-                minY: targetConfig.minY,
-                maxY: CONFIG.room.height - targetConfig.ceilingMargin,
+                minY: groundY,
+                airMinY,
+                groundY,
+                maxY,
                 minZ: -CONFIG.room.depth / 2 + targetConfig.backMargin,
                 maxZ: CONFIG.positions.deskZ - targetConfig.frontMarginFromDesk
             };
@@ -652,11 +675,19 @@
             const bounds = getTargetSpawnBounds();
             const targetConfig = CONFIG.targetSequence;
             let candidate = new THREE.Vector3();
+            const groundProbability = THREE.MathUtils.clamp(
+                targetConfig.groundSpawnProbability,
+                0,
+                1
+            );
+            const shouldSpawnOnGround = Math.random() < groundProbability;
 
             for (let attempt = 0; attempt < targetConfig.maxPositionAttempts; attempt++) {
                 candidate.set(
                     randomBetween(bounds.minX, bounds.maxX),
-                    randomBetween(bounds.minY, bounds.maxY),
+                    shouldSpawnOnGround
+                        ? bounds.groundY
+                        : randomBetween(bounds.airMinY, bounds.maxY),
                     randomBetween(bounds.minZ, bounds.maxZ)
                 );
                 if (!targetSequenceState.previousPosition ||
@@ -770,7 +801,7 @@
         const aimWorld = new THREE.Vector3();
         const shotDirection = new THREE.Vector3();
         const tracerSegmentCount = Math.max(1, Math.floor(CONFIG.tracer.segments));
-        const tracerUnitGeometry = new THREE.CylinderGeometry(1, 1, 1, 6, 1, true);
+        const tracerUnitGeometry = new THREE.CylinderGeometry(1, 1, 1, 6, 1, false);
         const tracerMaterials = Array.from({ length: tracerSegmentCount }, (_, index) => {
             const progress = tracerSegmentCount === 1 ? 0 : index / (tracerSegmentCount - 1);
             return new THREE.MeshBasicMaterial({
@@ -870,15 +901,16 @@
             );
         }
 
-        const gunshotAudio = new THREE.Audio(audioListener);
-        camera.add(gunshotAudio);
-        let isGunshotAudioReady = false;
+        // Bufferは1度だけロードし、shotごとに独立したsourceを作って音を重ねる。
+        let gunshotAudioBuffer = null;
+        const activeGunshotSources = new Set();
+        const gunshotMixGain = audioListener.context.createGain();
+        gunshotMixGain.gain.value = CONFIG.gun.gunshotVolume;
+        gunshotMixGain.connect(audioListener.getInput());
         new THREE.AudioLoader().load(
             `./assets/audio/${CONFIG.gun.gunshotAudioFile}`,
             (buffer) => {
-                gunshotAudio.setBuffer(buffer);
-                gunshotAudio.setLoop(false);
-                isGunshotAudioReady = true;
+                gunshotAudioBuffer = buffer;
             },
             undefined,
             (error) => {
@@ -887,15 +919,23 @@
         );
 
         function playGunshotSound() {
-            if (!isGunshotAudioReady) return;
+            if (!gunshotAudioBuffer) return;
             try {
                 if (audioListener.context.state === 'suspended') {
                     audioListener.context.resume().catch((error) => {
                         console.warn('Gunshot audio context could not be resumed.', error);
                     });
                 }
-                if (gunshotAudio.isPlaying) gunshotAudio.stop();
-                gunshotAudio.play();
+
+                const source = audioListener.context.createBufferSource();
+                source.buffer = gunshotAudioBuffer;
+                source.connect(gunshotMixGain);
+                activeGunshotSources.add(source);
+                source.onended = () => {
+                    source.disconnect();
+                    activeGunshotSources.delete(source);
+                };
+                source.start();
             } catch (error) {
                 console.warn('Gunshot audio could not be played.', error);
             }
@@ -999,19 +1039,28 @@
             const tracer = new THREE.Group();
             tracer.name = 'SHOT_TRACER';
             const segmentLength = totalLength / tracerSegmentCount;
+            const segmentFill = THREE.MathUtils.clamp(CONFIG.tracer.segmentFill, 0.05, 1.0);
             for (let index = 0; index < tracerSegmentCount; index++) {
                 const progress = tracerSegmentCount === 1 ? 0 : index / (tracerSegmentCount - 1);
                 const widthScale = THREE.MathUtils.lerp(1, CONFIG.tracer.endWidthScale, progress);
                 const radius = CONFIG.tracer.width * widthScale / 2;
+                const visibleLength = tracerSegmentCount === 1
+                    ? totalLength
+                    : segmentLength * segmentFill;
+                let centerDistance = segmentLength * (index + 0.5);
+                if (index === 0) centerDistance = visibleLength / 2;
+                if (index === tracerSegmentCount - 1) {
+                    centerDistance = totalLength - visibleLength / 2;
+                }
                 const segment = new THREE.Mesh(tracerUnitGeometry, tracerMaterials[index]);
                 segment.position.copy(origin).addScaledVector(
                     direction,
-                    segmentLength * (index + 0.5)
+                    centerDistance
                 );
                 segment.quaternion.setFromUnitVectors(tracerUpAxis, direction);
                 segment.scale.set(
                     radius,
-                    segmentLength * CONFIG.tracer.segmentFill,
+                    visibleLength,
                     radius
                 );
                 segment.frustumCulled = false;
