@@ -28,6 +28,9 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script type="module">
         import { VRButton } from 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/webxr/VRButton.js';
+        import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/loaders/GLTFLoader.js';
+        import { ENTRANCE_DEFAULT_GUN } from './src/config/guns.js';
+        import { loadGunOffsets, loadDevSettings } from './src/browser/localStorageSettingsRepository.js';
 
         const scene = new THREE.Scene();
         // 抜けるような快晴の青空
@@ -109,6 +112,13 @@
                 bodyHeight: 1.35,
                 chestDiameter: 0.30,
                 circleOutlineWidth: 0.02
+            },
+            gun: {
+                rayDistance: 100,
+                hitPriorityDistanceTolerance: 0.08,
+                gunshotAudioFile: 'gunshot_pistol.wav',
+                hapticsIntensity: 0.5,
+                hapticsDurationMs: 30
             },
             interaction: {
                 controllerContactRadius: 0.055,
@@ -615,7 +625,8 @@
             state: 'idle',
             remaining: 0,
             shownCount: 0,
-            previousPosition: null
+            previousPosition: null,
+            targetActive: false
         };
 
         function chooseTargetPosition() {
@@ -672,6 +683,7 @@
             );
             hologramTarget.rotation.set(0, yaw, 0);
             hologramTarget.visible = true;
+            targetSequenceState.targetActive = true;
 
             targetSequenceState.shownCount += 1;
             targetSequenceState.state = 'visible';
@@ -684,6 +696,7 @@
 
         function completeTargetSequence() {
             hologramTarget.visible = false;
+            targetSequenceState.targetActive = false;
             targetSequenceState.state = 'complete';
             targetSequenceState.remaining = 0;
             console.log('Target sequence complete');
@@ -692,6 +705,7 @@
         function startTargetSequence() {
             if (targetSequenceState.state !== 'idle') return false;
             hologramTarget.visible = false;
+            targetSequenceState.targetActive = false;
             targetSequenceState.state = 'waiting';
             targetSequenceState.remaining = CONFIG.targetSequence.initialDelay;
             targetSequenceState.shownCount = 0;
@@ -713,6 +727,7 @@
                 showNextTarget();
             } else if (targetSequenceState.state === 'visible') {
                 hologramTarget.visible = false;
+                targetSequenceState.targetActive = false;
                 if (targetSequenceState.shownCount >= CONFIG.targetSequence.count) {
                     completeTargetSequence();
                 } else {
@@ -723,6 +738,197 @@
                     );
                 }
             }
+        }
+
+        // ---------------------------------------------------------
+        // 既存Deep Aim準拠のDesert Eagle読み込み・射撃
+        // ---------------------------------------------------------
+        const gunDefinition = ENTRANCE_DEFAULT_GUN;
+        const gunOffsets = loadGunOffsets(gunDefinition);
+        const gunDevSettings = loadDevSettings();
+        const gunLoader = new GLTFLoader();
+        const shotRaycaster = new THREE.Raycaster();
+        const muzzleWorld = new THREE.Vector3();
+        const aimWorld = new THREE.Vector3();
+        const shotDirection = new THREE.Vector3();
+
+        let loadedGun = null;
+        let rightController = null;
+        let rightInputSource = null;
+        let rightGunOffsetNode = null;
+
+        function applyGunTransform() {
+            if (rightGunOffsetNode) {
+                rightGunOffsetNode.position.set(
+                    gunOffsets.offsetX,
+                    gunOffsets.offsetY,
+                    gunOffsets.offsetZ
+                );
+                rightGunOffsetNode.rotation.set(
+                    THREE.MathUtils.degToRad(gunOffsets.pitch),
+                    THREE.MathUtils.degToRad(gunOffsets.yaw),
+                    THREE.MathUtils.degToRad(gunOffsets.roll)
+                );
+            }
+            if (loadedGun) {
+                loadedGun.gunRoot.scale.setScalar(gunDevSettings.gunScale);
+            }
+        }
+
+        function attachGunToRightController() {
+            if (!rightController) return;
+
+            if (!rightGunOffsetNode || rightGunOffsetNode.parent !== rightController) {
+                rightGunOffsetNode?.removeFromParent();
+                rightGunOffsetNode = new THREE.Group();
+                rightGunOffsetNode.name = 'EntranceGunOffsetNode';
+                rightController.add(rightGunOffsetNode);
+            }
+            applyGunTransform();
+
+            if (loadedGun && loadedGun.gunRoot.parent !== rightGunOffsetNode) {
+                rightGunOffsetNode.add(loadedGun.gunRoot);
+            }
+        }
+
+        function loadDesertEagle() {
+            gunLoader.load(
+                gunDefinition.modelUrl,
+                (gltf) => {
+                    const gunRoot = gltf.scene.getObjectByName('Gun_Root');
+                    const muzzlePoint = gunRoot?.getObjectByName('Muzzle_Point');
+                    const aimPoint = gunRoot?.getObjectByName('Aim_Point');
+                    if (!gunRoot || !muzzlePoint || !aimPoint) {
+                        console.error(
+                            `${gunDefinition.displayName}: Gun_Root / Muzzle_Point / Aim_Point is required.`
+                        );
+                        return;
+                    }
+
+                    // GLBのグリップ原点と、既存Deep Aimのscale・較正値をそのまま利用する。
+                    gunRoot.position.set(0, 0, 0);
+                    loadedGun = { gunRoot, muzzlePoint, aimPoint };
+                    applyGunTransform();
+                    attachGunToRightController();
+                    console.log(`${gunDefinition.displayName} ready`);
+                },
+                undefined,
+                (error) => {
+                    console.error(`Failed to load ${gunDefinition.displayName}.`, error);
+                }
+            );
+        }
+
+        const gunshotAudio = new THREE.Audio(audioListener);
+        camera.add(gunshotAudio);
+        let isGunshotAudioReady = false;
+        new THREE.AudioLoader().load(
+            `./assets/audio/${CONFIG.gun.gunshotAudioFile}`,
+            (buffer) => {
+                gunshotAudio.setBuffer(buffer);
+                gunshotAudio.setLoop(false);
+                isGunshotAudioReady = true;
+            },
+            undefined,
+            (error) => {
+                console.warn(`Gunshot audio could not be loaded: ${CONFIG.gun.gunshotAudioFile}`, error);
+            }
+        );
+
+        function playGunshotSound() {
+            if (!isGunshotAudioReady) return;
+            try {
+                if (audioListener.context.state === 'suspended') {
+                    audioListener.context.resume().catch((error) => {
+                        console.warn('Gunshot audio context could not be resumed.', error);
+                    });
+                }
+                if (gunshotAudio.isPlaying) gunshotAudio.stop();
+                gunshotAudio.play();
+            } catch (error) {
+                console.warn('Gunshot audio could not be played.', error);
+            }
+        }
+
+        function pulseRightController() {
+            const gamepad = rightInputSource?.gamepad;
+            const actuator = gamepad?.hapticActuators?.[0] || gamepad?.vibrationActuator;
+            if (!actuator?.pulse) return;
+            actuator.pulse(
+                CONFIG.gun.hapticsIntensity,
+                CONFIG.gun.hapticsDurationMs
+            ).catch(() => {});
+        }
+
+        function getShotPose() {
+            if (!loadedGun || !rightController) return null;
+            scene.updateMatrixWorld(true);
+            loadedGun.muzzlePoint.getWorldPosition(muzzleWorld);
+            loadedGun.aimPoint.getWorldPosition(aimWorld);
+            shotDirection.copy(aimWorld).sub(muzzleWorld);
+            if (shotDirection.lengthSq() < 0.000001) return null;
+            shotDirection.normalize();
+            return { origin: muzzleWorld, direction: shotDirection };
+        }
+
+        function findTargetHit(origin, direction) {
+            if (!targetSequenceState.targetActive || !hologramTarget.visible) return null;
+
+            shotRaycaster.set(origin, direction);
+            shotRaycaster.near = 0;
+            shotRaycaster.far = CONFIG.gun.rayDistance;
+            const intersections = shotRaycaster.intersectObjects(
+                hologramTarget.userData.hitboxes,
+                false
+            );
+            if (intersections.length === 0) return null;
+
+            // CHESTとBODYが同じ射線上にある場合、近距離の候補内で意味的priorityを優先する。
+            const nearestDistance = intersections[0].distance;
+            const overlappingHits = intersections.filter((intersection) =>
+                intersection.distance <= nearestDistance + CONFIG.gun.hitPriorityDistanceTolerance
+            );
+            overlappingHits.sort((a, b) => {
+                const priorityDifference =
+                    (b.object.userData.hitPriority || 0) - (a.object.userData.hitPriority || 0);
+                return priorityDifference || a.distance - b.distance;
+            });
+            return overlappingHits[0];
+        }
+
+        function fireDesertEagle() {
+            const shotPose = getShotPose();
+            if (!shotPose) return;
+
+            playGunshotSound();
+            pulseRightController();
+
+            const hit = findTargetHit(shotPose.origin, shotPose.direction);
+            if (!hit) return;
+
+            console.log(`Hit: ${hit.object.userData.hitZone}`);
+            // 視覚確認のためだけに非表示化し、シーケンスのstate・remainingは変更しない。
+            hologramTarget.visible = false;
+            targetSequenceState.targetActive = false;
+        }
+
+        function onRightControllerConnected(controller, inputSource) {
+            rightController = controller;
+            rightInputSource = inputSource;
+            attachGunToRightController();
+        }
+
+        function onRightControllerDisconnected(controller) {
+            if (controller !== rightController) return;
+            rightGunOffsetNode?.removeFromParent();
+            rightGunOffsetNode = null;
+            rightController = null;
+            rightInputSource = null;
+        }
+
+        function onControllerSelectStart(event) {
+            if (event.target !== rightController) return;
+            fireDesertEagle();
         }
 
         // ---------------------------------------------------------
@@ -752,17 +958,27 @@
             contactPoint.visible = false;
             controller.add(contactPoint);
 
-            controller.addEventListener('connected', () => {
+            controller.addEventListener('connected', (event) => {
                 controller.userData.isConnected = true;
+                controller.userData.inputSource = event.data;
+                controller.userData.handedness = event.data.handedness;
                 contactPoint.visible = true;
+                if (event.data.handedness === 'right') {
+                    onRightControllerConnected(controller, event.data);
+                }
             });
             controller.addEventListener('disconnected', () => {
+                onRightControllerDisconnected(controller);
                 controller.userData.isConnected = false;
                 controller.userData.isTouchingButton = false;
+                controller.userData.inputSource = null;
+                controller.userData.handedness = null;
                 contactPoint.visible = false;
             });
+            controller.addEventListener('selectstart', onControllerSelectStart);
             anchors.PLAYER_START.add(controller);
         });
+        loadDesertEagle();
 
         const buttonPushRestY = buttonPush.position.y;
         const buttonSurfaceY = buttonPushRestY + 0.02;
