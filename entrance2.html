@@ -65,6 +65,25 @@
         dirLight.shadow.bias = -0.0005;
         scene.add(dirLight);
 
+        // ---------------------------------------------------------
+        // 空間設定 (ここで広さや配置を一括調整できます)
+        // ---------------------------------------------------------
+        const CONFIG = {
+            room: {
+                width: 18,   // 空間の幅 (X軸)
+                depth: 24,   // 空間の奥行き (Z軸)
+                height: 8    // 天井の高さ (Y軸)
+            },
+            positions: {
+                playerStartZ: 9, // プレイヤーの初期Z座標 (大きいほど手前側)
+                deskZ: 7         // 机のZ座標 (プレイヤーの少し前)
+            },
+            backOpening: {
+                width: 8,    // 正面奥の開口部の幅
+                height: 5    // 正面奥の開口部の高さ
+            }
+        };
+
         const anchors = {
             PLAYER_START: new THREE.Group(),
             HALL_ORIGIN: new THREE.Group(),
@@ -75,33 +94,24 @@
         scene.add(anchors.HALL_ORIGIN);
         
         // プレイヤー空間の基準点（VR移動のベースとなるようY=0に設定）
-        anchors.PLAYER_START.position.set(0, 0, 4); // 机の少し手前(Z=4)
+        anchors.PLAYER_START.position.set(0, 0, CONFIG.positions.playerStartZ);
         scene.add(anchors.PLAYER_START);
         
-        // カメラをプレイヤー開始位置の子にする(VR時の基準点)
-        // PC用の初期視点として高さを設定（VR時はHMDの物理高さで自動上書きされる）
+        // PC用の初期視点として高さを設定（VR時はHMDの物理高さで上書きされる）
         camera.position.set(0, 1.65, 0);
         anchors.PLAYER_START.add(camera);
 
         const matConcrete = new THREE.MeshStandardMaterial({ 
-            color: 0x888888, 
-            roughness: 0.9, 
-            metalness: 0.1 
+            color: 0x888888, roughness: 0.9, metalness: 0.1 
         });
         const matGround = new THREE.MeshStandardMaterial({
-            color: 0xc2a67a, // 乾いた黄土色
-            roughness: 1.0,
-            metalness: 0.0
+            color: 0xc2a67a, roughness: 1.0, metalness: 0.0
         });
         const matDarkMetal = new THREE.MeshStandardMaterial({ 
-            color: 0x333333, 
-            roughness: 0.6, 
-            metalness: 0.7 
+            color: 0x333333, roughness: 0.6, metalness: 0.7 
         });
         const matButton = new THREE.MeshStandardMaterial({ 
-            color: 0xaa2222, 
-            roughness: 0.4, 
-            metalness: 0.2 
+            color: 0xaa2222, roughness: 0.4, metalness: 0.2 
         });
 
         const visualGroups = {
@@ -118,111 +128,123 @@
         groundOutside.receiveShadow = true;
         scene.add(groundOutside);
 
+        // 計算用の補助変数
+        const halfW = CONFIG.room.width / 2;
+        const halfD = CONFIG.room.depth / 2;
+        const h = CONFIG.room.height;
+
         // ホール内側の床
-        const floor = new THREE.Mesh(new THREE.PlaneGeometry(16, 20), matConcrete);
+        const floor = new THREE.Mesh(new THREE.PlaneGeometry(CONFIG.room.width, CONFIG.room.depth), matConcrete);
         floor.rotation.x = -Math.PI / 2;
         floor.receiveShadow = true;
         visualGroups.hall.add(floor);
 
         // 天井 (開口部を残すために巨大な梁を渡す構造)
-        for(let i=0; i<4; i++) {
-            const beam = new THREE.Mesh(new THREE.BoxGeometry(18, 0.5, 2), matConcrete);
-            beam.position.set(0, 7, -7 + i * 4.5);
+        const beamCount = Math.floor(CONFIG.room.depth / 4); // 奥行きに応じて本数を自動調整
+        for(let i=0; i<beamCount; i++) {
+            const beam = new THREE.Mesh(new THREE.BoxGeometry(CONFIG.room.width + 2, 0.5, 2), matConcrete);
+            const zPos = -halfD + 1 + i * ((CONFIG.room.depth - 2) / (beamCount - 1 || 1));
+            beam.position.set(0, h, zPos);
             beam.castShadow = true; beam.receiveShadow = true;
             visualGroups.hall.add(beam);
         }
 
         // 左の壁 (ソリッド)
-        const leftWall = new THREE.Mesh(new THREE.BoxGeometry(1, 7, 20), matConcrete);
-        leftWall.position.set(-8.5, 3.5, 0);
+        const leftWall = new THREE.Mesh(new THREE.BoxGeometry(1, h, CONFIG.room.depth), matConcrete);
+        leftWall.position.set(-halfW - 0.5, h / 2, 0);
         leftWall.castShadow = true; leftWall.receiveShadow = true;
         visualGroups.hall.add(leftWall);
 
         // 右の壁 (千鳥状の窓枠を構成するために分割)
-        // 1. 奥の壁部分 (Z: -10 ~ -1.6 -> 幅8.4, 中心Z -5.8)
-        const rightWallBack = new THREE.Mesh(new THREE.BoxGeometry(1, 7, 8.4), matConcrete);
-        rightWallBack.position.set(8.5, 3.5, -5.8);
+        const windowWidth = 3.2;
+        const wallD = (CONFIG.room.depth - windowWidth) / 2;
+        
+        const rightWallBack = new THREE.Mesh(new THREE.BoxGeometry(1, h, wallD), matConcrete);
+        rightWallBack.position.set(halfW + 0.5, h / 2, -halfD + wallD / 2);
         rightWallBack.castShadow = true; rightWallBack.receiveShadow = true;
         visualGroups.hall.add(rightWallBack);
 
-        // 2. 手前の壁部分 (Z: 1.6 ~ 10 -> 幅8.4, 中心Z 5.8)
-        const rightWallFront = new THREE.Mesh(new THREE.BoxGeometry(1, 7, 8.4), matConcrete);
-        rightWallFront.position.set(8.5, 3.5, 5.8);
+        const rightWallFront = new THREE.Mesh(new THREE.BoxGeometry(1, h, wallD), matConcrete);
+        rightWallFront.position.set(halfW + 0.5, h / 2, halfD - wallD / 2);
         rightWallFront.castShadow = true; rightWallFront.receiveShadow = true;
         visualGroups.hall.add(rightWallFront);
 
-        // 3. 窓の下の壁 (Y: 0 ~ 2.0 -> 高さ2.0, 中心Y 1.0)
-        const rightWallBottom = new THREE.Mesh(new THREE.BoxGeometry(1, 2.0, 3.2), matConcrete);
-        rightWallBottom.position.set(8.5, 1.0, 0);
+        // 窓の下の壁
+        const rightWallBottom = new THREE.Mesh(new THREE.BoxGeometry(1, 2.0, windowWidth), matConcrete);
+        rightWallBottom.position.set(halfW + 0.5, 1.0, 0);
         rightWallBottom.castShadow = true; rightWallBottom.receiveShadow = true;
         visualGroups.hall.add(rightWallBottom);
 
-        // 4. 窓の上の壁 (Y: 4.4 ~ 7.0 -> 高さ2.6, 中心Y 5.7)
-        const rightWallTop = new THREE.Mesh(new THREE.BoxGeometry(1, 2.6, 3.2), matConcrete);
-        rightWallTop.position.set(8.5, 5.7, 0);
+        // 窓の上の壁
+        const topWallHeight = h - 4.4;
+        const rightWallTop = new THREE.Mesh(new THREE.BoxGeometry(1, topWallHeight, windowWidth), matConcrete);
+        rightWallTop.position.set(halfW + 0.5, 4.4 + topWallHeight / 2, 0);
         rightWallTop.castShadow = true; rightWallTop.receiveShadow = true;
         visualGroups.hall.add(rightWallTop);
 
-        // 5. 窓の中のブロック配置 (千鳥状 3x4 / 穴6個)
+        // 窓の中のブロック配置 (千鳥状 3x4 / 穴6個)
         for (let r = 0; r < 3; r++) {
             for (let c = 0; c < 4; c++) {
-                // (行+列)が偶数の場所はコンクリートブロックで埋める (奇数が穴になる)
                 if ((r + c) % 2 === 0) {
                     const block = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.8, 0.8), matConcrete);
-                    block.position.set(8.5, 2.4 + r * 0.8, -1.2 + c * 0.8);
-                    block.castShadow = true;
-                    block.receiveShadow = true;
+                    block.position.set(halfW + 0.5, 2.4 + r * 0.8, -1.2 + c * 0.8);
+                    block.castShadow = true; block.receiveShadow = true;
                     visualGroups.hall.add(block);
                 }
             }
         }
 
         // 奥の壁（正面の巨大な開口部）
-        // 左側の壁
-        const backWallLeft = new THREE.Mesh(new THREE.BoxGeometry(4, 7, 1), matConcrete);
-        backWallLeft.position.set(-6, 3.5, -10.5);
+        const opW = CONFIG.backOpening.width;
+        const sideWallW = (CONFIG.room.width - opW) / 2;
+        
+        const backWallLeft = new THREE.Mesh(new THREE.BoxGeometry(sideWallW, h, 1), matConcrete);
+        backWallLeft.position.set(-halfW + sideWallW / 2, h / 2, -halfD - 0.5);
         backWallLeft.castShadow = true; backWallLeft.receiveShadow = true;
         visualGroups.hall.add(backWallLeft);
         
-        // 右側の壁
-        const backWallRight = new THREE.Mesh(new THREE.BoxGeometry(4, 7, 1), matConcrete);
-        backWallRight.position.set(6, 3.5, -10.5);
+        const backWallRight = new THREE.Mesh(new THREE.BoxGeometry(sideWallW, h, 1), matConcrete);
+        backWallRight.position.set(halfW - sideWallW / 2, h / 2, -halfD - 0.5);
         backWallRight.castShadow = true; backWallRight.receiveShadow = true;
         visualGroups.hall.add(backWallRight);
         
-        // 上部（鴨居部分、Y=5〜7） これにより 8m x 5m の巨大な開口部ができる
-        const backWallTop = new THREE.Mesh(new THREE.BoxGeometry(8, 2, 1), matConcrete);
-        backWallTop.position.set(0, 6, -10.5);
+        const topOpH = h - CONFIG.backOpening.height;
+        const backWallTop = new THREE.Mesh(new THREE.BoxGeometry(opW, topOpH, 1), matConcrete);
+        backWallTop.position.set(0, h - topOpH / 2, -halfD - 0.5);
         backWallTop.castShadow = true; backWallTop.receiveShadow = true;
         visualGroups.hall.add(backWallTop);
 
         // 手前の壁 (プレイヤーの背後)
-        const frontWall = new THREE.Mesh(new THREE.BoxGeometry(16, 7, 1), matConcrete);
-        frontWall.position.set(0, 3.5, 10.5);
+        const frontWall = new THREE.Mesh(new THREE.BoxGeometry(CONFIG.room.width, h, 1), matConcrete);
+        frontWall.position.set(0, h / 2, halfD + 0.5);
         frontWall.castShadow = true; frontWall.receiveShadow = true;
         visualGroups.hall.add(frontWall);
 
-        // 柱の反復配置 (奥行き方向に均等配置、ただし右壁のZ=0窓前は抜く)
-        for (let i = 0; i < 5; i++) {
-            const zPos = -8 + i * 4;
+        // 柱の反復配置 (奥行きに合わせて自動配置)
+        const pillarSpacing = 4;
+        const pillarCount = Math.floor(CONFIG.room.depth / pillarSpacing) + 1;
+        const startZ = -((pillarCount - 1) * pillarSpacing) / 2;
+
+        for (let i = 0; i < pillarCount; i++) {
+            const zPos = startZ + i * pillarSpacing;
             
             // 左側の柱
-            const pLeft = new THREE.Mesh(new THREE.BoxGeometry(0.8, 7, 1.2), matConcrete);
-            pLeft.position.set(-7.5, 3.5, zPos);
+            const pLeft = new THREE.Mesh(new THREE.BoxGeometry(0.8, h, 1.2), matConcrete);
+            pLeft.position.set(-halfW + 0.5, h / 2, zPos);
             pLeft.castShadow = true; pLeft.receiveShadow = true;
             visualGroups.hall.add(pLeft);
 
-            // 右側の柱 (窓の中央 Z=0 と被る場合は生成しない)
-            if (zPos !== 0) {
-                const pRight = new THREE.Mesh(new THREE.BoxGeometry(0.8, 7, 1.2), matConcrete);
-                pRight.position.set(7.5, 3.5, zPos);
+            // 右側の柱 (窓の中央 Z=0 付近と被る場合は生成しない)
+            if (Math.abs(zPos) > 1.6) {
+                const pRight = new THREE.Mesh(new THREE.BoxGeometry(0.8, h, 1.2), matConcrete);
+                pRight.position.set(halfW - 0.5, h / 2, zPos);
                 pRight.castShadow = true; pRight.receiveShadow = true;
                 visualGroups.hall.add(pRight);
             }
         }
 
-        // 机 (人間スケールの具体物)
-        anchors.DESK_ORIGIN.position.set(0, 0, 2);
+        // 机
+        anchors.DESK_ORIGIN.position.set(0, 0, CONFIG.positions.deskZ);
         scene.add(anchors.DESK_ORIGIN);
         
         const deskTop = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.1, 0.8), matDarkMetal);
@@ -243,7 +265,7 @@
         anchors.DESK_ORIGIN.add(visualGroups.desk);
 
         // ボタン (訓練開始用)
-        anchors.BUTTON_ORIGIN.position.set(0, 0.9, 2); // 机の上
+        anchors.BUTTON_ORIGIN.position.set(0, 0.9, CONFIG.positions.deskZ); // 机の上
         scene.add(anchors.BUTTON_ORIGIN);
 
         const buttonBase = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.18, 0.05, 16), matDarkMetal);
@@ -258,8 +280,8 @@
 
         anchors.BUTTON_ORIGIN.add(visualGroups.button);
 
-        // 標的エリアのアンカー設定 (机より奥、Z=-2〜-8付近を想定)
-        anchors.TARGET_AREA_ORIGIN.position.set(0, 0, -5);
+        // 標的エリアのアンカー設定 (空間の広さに応じて相対配置)
+        anchors.TARGET_AREA_ORIGIN.position.set(0, 0, -CONFIG.room.depth / 4);
         scene.add(anchors.TARGET_AREA_ORIGIN);
 
         // PCブラウザ確認用のマウスクリック＆ドラッグによる見回し機能
