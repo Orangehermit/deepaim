@@ -107,7 +107,8 @@
                 headBodyGap: 0.05,
                 bodyWidth: 0.70,
                 bodyHeight: 1.35,
-                chestDiameter: 0.30
+                chestDiameter: 0.30,
+                circleOutlineWidth: 0.02
             },
             interaction: {
                 controllerContactRadius: 0.055,
@@ -376,11 +377,27 @@
                 depthWrite: false,
                 side: THREE.DoubleSide
             });
-            const chestMaterial = new THREE.MeshBasicMaterial({
+            const circleOutlineMaterial = new THREE.MeshBasicMaterial({
+                color: 0x05070a,
+                transparent: true,
+                opacity: 0.95,
+                blending: THREE.NormalBlending,
+                depthWrite: false,
+                side: THREE.DoubleSide
+            });
+            const headFillMaterial = new THREE.MeshBasicMaterial({
+                color: 0x159dff,
+                transparent: true,
+                opacity: 0.88,
+                blending: THREE.NormalBlending,
+                depthWrite: false,
+                side: THREE.DoubleSide
+            });
+            const chestFillMaterial = new THREE.MeshBasicMaterial({
                 color: 0xff304e,
                 transparent: true,
-                opacity: 0.92,
-                blending: THREE.AdditiveBlending,
+                opacity: 0.94,
+                blending: THREE.NormalBlending,
                 depthWrite: false,
                 side: THREE.DoubleSide
             });
@@ -395,13 +412,23 @@
             const headCenterY = bodyTopY + dimensions.headBodyGap + headRadius;
             const chestCenterY = bodyTopY - dimensions.chestDiameter;
 
-            // 円そのものがHead Shot Zone。内部に別のSweet Spotは作らない。
-            const headVisual = new THREE.Mesh(
-                new THREE.RingGeometry(Math.max(0.001, headRadius - 0.025), headRadius, 28),
-                outlineMaterial
-            );
+            // 円そのものがHead Shot Zone。黒い下地の上へ青い円を重ねて輪郭を作る。
+            const headVisual = new THREE.Group();
             headVisual.name = 'HEAD_VISUAL';
             headVisual.position.set(0, headCenterY, 0);
+            const headOutline = new THREE.Mesh(
+                new THREE.CircleGeometry(headRadius, 28),
+                circleOutlineMaterial
+            );
+            const headFill = new THREE.Mesh(
+                new THREE.CircleGeometry(
+                    Math.max(0.001, headRadius - dimensions.circleOutlineWidth),
+                    28
+                ),
+                headFillMaterial
+            );
+            headFill.position.z = 0.006;
+            headVisual.add(headOutline, headFill);
             visual.add(headVisual);
 
             // 頭以外は、半透明面と3辺の輪郭からなる逆三角形だけで表現する。
@@ -438,12 +465,23 @@
             );
             visual.add(bodyVisual);
 
-            const chestVisual = new THREE.Mesh(
-                new THREE.CircleGeometry(chestRadius, 24),
-                chestMaterial
-            );
+            // HEADと同じ太さの黒縁を使い、明るい環境でも赤を識別しやすくする。
+            const chestVisual = new THREE.Group();
             chestVisual.name = 'CHEST_VISUAL';
             chestVisual.position.set(0, chestCenterY, 0.04);
+            const chestOutline = new THREE.Mesh(
+                new THREE.CircleGeometry(chestRadius, 24),
+                circleOutlineMaterial
+            );
+            const chestFill = new THREE.Mesh(
+                new THREE.CircleGeometry(
+                    Math.max(0.001, chestRadius - dimensions.circleOutlineWidth),
+                    24
+                ),
+                chestFillMaterial
+            );
+            chestFill.position.z = 0.006;
+            chestVisual.add(chestOutline, chestFill);
             visual.add(chestVisual);
 
             // Materialだけを不可視にし、将来のRaycasterがMeshを識別できるようにする。
