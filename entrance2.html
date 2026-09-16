@@ -81,6 +81,36 @@
             backOpening: {
                 width: 8,    // 正面奥の開口部の幅
                 height: 5    // 正面奥の開口部の高さ
+            },
+            targetSequence: {
+                count: 10,
+                initialDelay: 1.0,
+                visibleDurationMin: 1.5,
+                visibleDurationMax: 2.5,
+                gapDurationMin: 1.0,
+                gapDurationMax: 3.0,
+                sideMargin: 2.0,
+                backMargin: 2.0,
+                frontMarginFromDesk: 3.0,
+                minY: 1.2,
+                ceilingMargin: 1.2,
+                minDistanceFromPrevious: 2.0,
+                maxPositionAttempts: 20,
+                audioFile: 'target_spawn.wav',
+                audioRefDistance: 2.0,
+                audioMaxDistance: 30.0,
+                audioRolloffFactor: 1.0
+            },
+            interaction: {
+                controllerContactRadius: 0.055,
+                controllerContactOffsetZ: -0.08,
+                buttonTouchRadius: 0.13,
+                buttonTouchHeight: 0.025,
+                buttonDepression: 0.025,
+                buttonAnimationSpeed: 18
+            },
+            debug: {
+                showTargetSpawnBounds: false
             }
         };
 
@@ -284,6 +314,403 @@
         anchors.TARGET_AREA_ORIGIN.position.set(0, 0, -CONFIG.room.depth / 4);
         scene.add(anchors.TARGET_AREA_ORIGIN);
 
+        // ---------------------------------------------------------
+        // 再利用可能なホログラム標的
+        // ---------------------------------------------------------
+        function addHologramSegment(parent, x1, y1, x2, y2, thickness, material) {
+            const dx = x2 - x1;
+            const dy = y2 - y1;
+            const length = Math.hypot(dx, dy);
+            const segment = new THREE.Mesh(
+                new THREE.BoxGeometry(length, thickness, thickness),
+                material
+            );
+            segment.position.set((x1 + x2) / 2, (y1 + y2) / 2, 0);
+            segment.rotation.z = Math.atan2(dy, dx);
+            parent.add(segment);
+            return segment;
+        }
+
+        function createHologramTarget() {
+            const target = new THREE.Group();
+            target.name = 'HOLOGRAM_TARGET';
+            target.userData.isHologramTarget = true;
+
+            const visual = new THREE.Group();
+            visual.name = 'VISUAL';
+            target.add(visual);
+
+            const hologramMaterial = new THREE.MeshBasicMaterial({
+                color: 0x35d9ff,
+                transparent: true,
+                opacity: 0.48,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                side: THREE.DoubleSide
+            });
+            const brightMaterial = new THREE.MeshBasicMaterial({
+                color: 0xa8f5ff,
+                transparent: true,
+                opacity: 0.92,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                side: THREE.DoubleSide
+            });
+
+            const headOutline = new THREE.Mesh(
+                new THREE.RingGeometry(0.22, 0.28, 24),
+                hologramMaterial
+            );
+            headOutline.position.set(0, 0.72, 0);
+            visual.add(headOutline);
+
+            // 胴体、肩、腕、腰を低ポリゴンの細い直方体で表現する。
+            addHologramSegment(visual, -0.43, 0.30, 0.43, 0.30, 0.055, hologramMaterial);
+            addHologramSegment(visual, -0.43, 0.30, -0.56, -0.20, 0.055, hologramMaterial);
+            addHologramSegment(visual, 0.43, 0.30, 0.56, -0.20, 0.055, hologramMaterial);
+            addHologramSegment(visual, -0.43, 0.30, -0.31, -0.58, 0.055, hologramMaterial);
+            addHologramSegment(visual, 0.43, 0.30, 0.31, -0.58, 0.055, hologramMaterial);
+            addHologramSegment(visual, -0.31, -0.58, 0.31, -0.58, 0.055, hologramMaterial);
+
+            // わずかな走査線で、ライトを使わず発光するホログラム感を補う。
+            for (const y of [0.08, -0.18, -0.42]) {
+                const scanLine = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.70 - Math.abs(y) * 0.25, 0.018, 0.025),
+                    hologramMaterial
+                );
+                scanLine.position.set(0, y, 0.015);
+                visual.add(scanLine);
+            }
+
+            const headSweetSpot = new THREE.Mesh(
+                new THREE.RingGeometry(0.075, 0.115, 20),
+                brightMaterial
+            );
+            headSweetSpot.name = 'HEAD_SWEET_SPOT';
+            headSweetSpot.position.set(0, 0.72, 0.035);
+            headSweetSpot.userData.hitZone = 'head';
+            visual.add(headSweetSpot);
+
+            const heartSweetSpot = new THREE.Mesh(
+                new THREE.RingGeometry(0.07, 0.115, 20),
+                brightMaterial
+            );
+            heartSweetSpot.name = 'HEART_SWEET_SPOT';
+            heartSweetSpot.position.set(-0.14, 0.08, 0.04);
+            heartSweetSpot.userData.hitZone = 'heart';
+            visual.add(heartSweetSpot);
+
+            // Materialだけを不可視にし、将来のRaycasterがMeshを識別できるようにする。
+            const hitboxMaterial = new THREE.MeshBasicMaterial({ visible: false });
+            const bodyHitbox = new THREE.Mesh(
+                new THREE.BoxGeometry(0.92, 1.0, 0.28),
+                hitboxMaterial
+            );
+            bodyHitbox.name = 'BODY_HITBOX';
+            bodyHitbox.position.set(0, -0.12, 0);
+            bodyHitbox.userData.hitZone = 'body';
+            bodyHitbox.userData.isTargetHitbox = true;
+            target.add(bodyHitbox);
+
+            const headHitbox = new THREE.Mesh(
+                new THREE.SphereGeometry(0.29, 12, 8),
+                hitboxMaterial
+            );
+            headHitbox.name = 'HEAD_HITBOX';
+            headHitbox.position.set(0, 0.72, 0);
+            headHitbox.userData.hitZone = 'head';
+            headHitbox.userData.isTargetHitbox = true;
+            target.add(headHitbox);
+
+            const heartHitbox = new THREE.Mesh(
+                new THREE.SphereGeometry(0.15, 10, 6),
+                hitboxMaterial
+            );
+            heartHitbox.name = 'HEART_HITBOX';
+            heartHitbox.position.set(-0.14, 0.08, 0.02);
+            heartHitbox.userData.hitZone = 'heart';
+            heartHitbox.userData.isTargetHitbox = true;
+            target.add(heartHitbox);
+
+            target.userData.hitboxes = [bodyHitbox, headHitbox, heartHitbox];
+            target.visible = false;
+            return target;
+        }
+
+        const hologramTarget = createHologramTarget();
+        anchors.TARGET_AREA_ORIGIN.add(hologramTarget);
+
+        // 音声は一度だけロードし、各出現時に同じPositionalAudioを再利用する。
+        const audioListener = new THREE.AudioListener();
+        camera.add(audioListener);
+        const targetSpawnAudio = new THREE.PositionalAudio(audioListener);
+        targetSpawnAudio.setRefDistance(CONFIG.targetSequence.audioRefDistance);
+        targetSpawnAudio.setMaxDistance(CONFIG.targetSequence.audioMaxDistance);
+        targetSpawnAudio.setRolloffFactor(CONFIG.targetSequence.audioRolloffFactor);
+        hologramTarget.add(targetSpawnAudio);
+
+        let isTargetSpawnAudioReady = false;
+        new THREE.AudioLoader().load(
+            `./assets/audio/${CONFIG.targetSequence.audioFile}`,
+            (buffer) => {
+                targetSpawnAudio.setBuffer(buffer);
+                targetSpawnAudio.setLoop(false);
+                isTargetSpawnAudioReady = true;
+            },
+            undefined,
+            (error) => {
+                console.warn(`Target spawn audio could not be loaded: ${CONFIG.targetSequence.audioFile}`, error);
+            }
+        );
+
+        function getTargetSpawnBounds() {
+            const targetConfig = CONFIG.targetSequence;
+            const bounds = {
+                minX: -CONFIG.room.width / 2 + targetConfig.sideMargin,
+                maxX: CONFIG.room.width / 2 - targetConfig.sideMargin,
+                minY: targetConfig.minY,
+                maxY: CONFIG.room.height - targetConfig.ceilingMargin,
+                minZ: -CONFIG.room.depth / 2 + targetConfig.backMargin,
+                maxZ: CONFIG.positions.deskZ - targetConfig.frontMarginFromDesk
+            };
+
+            // 極端に小さい設定でもNaNや逆転範囲を作らず、部屋中央へ退避する。
+            for (const axis of ['X', 'Y', 'Z']) {
+                const minKey = `min${axis}`;
+                const maxKey = `max${axis}`;
+                if (bounds[minKey] > bounds[maxKey]) {
+                    const center = (bounds[minKey] + bounds[maxKey]) / 2;
+                    bounds[minKey] = center;
+                    bounds[maxKey] = center;
+                }
+            }
+            return bounds;
+        }
+
+        function randomBetween(min, max) {
+            return min + Math.random() * (max - min);
+        }
+
+        function randomDuration(min, max) {
+            return randomBetween(Math.min(min, max), Math.max(min, max));
+        }
+
+        const targetSpawnBounds = getTargetSpawnBounds();
+        if (CONFIG.debug.showTargetSpawnBounds) {
+            const boundsWidth = Math.max(0.001, targetSpawnBounds.maxX - targetSpawnBounds.minX);
+            const boundsHeight = Math.max(0.001, targetSpawnBounds.maxY - targetSpawnBounds.minY);
+            const boundsDepth = Math.max(0.001, targetSpawnBounds.maxZ - targetSpawnBounds.minZ);
+            const boundsDebug = new THREE.Mesh(
+                new THREE.BoxGeometry(boundsWidth, boundsHeight, boundsDepth),
+                new THREE.MeshBasicMaterial({
+                    color: 0x35d9ff,
+                    transparent: true,
+                    opacity: 0.18,
+                    wireframe: true
+                })
+            );
+            boundsDebug.name = 'TARGET_SPAWN_BOUNDS_DEBUG';
+            boundsDebug.position.set(
+                (targetSpawnBounds.minX + targetSpawnBounds.maxX) / 2,
+                (targetSpawnBounds.minY + targetSpawnBounds.maxY) / 2,
+                (targetSpawnBounds.minZ + targetSpawnBounds.maxZ) / 2
+            );
+            anchors.HALL_ORIGIN.add(boundsDebug);
+        }
+
+        const targetSequenceState = {
+            state: 'idle',
+            remaining: 0,
+            shownCount: 0,
+            previousPosition: null
+        };
+
+        function chooseTargetPosition() {
+            const bounds = getTargetSpawnBounds();
+            const targetConfig = CONFIG.targetSequence;
+            let candidate = new THREE.Vector3();
+
+            for (let attempt = 0; attempt < targetConfig.maxPositionAttempts; attempt++) {
+                candidate.set(
+                    randomBetween(bounds.minX, bounds.maxX),
+                    randomBetween(bounds.minY, bounds.maxY),
+                    randomBetween(bounds.minZ, bounds.maxZ)
+                );
+                if (!targetSequenceState.previousPosition ||
+                    candidate.distanceTo(targetSequenceState.previousPosition) >= targetConfig.minDistanceFromPrevious) {
+                    break;
+                }
+            }
+            return candidate;
+        }
+
+        function playTargetSpawnSound() {
+            if (!isTargetSpawnAudioReady) return;
+            try {
+                if (audioListener.context.state === 'suspended') {
+                    audioListener.context.resume().catch((error) => {
+                        console.warn('Target spawn audio context could not be resumed.', error);
+                    });
+                }
+                if (targetSpawnAudio.isPlaying) targetSpawnAudio.stop();
+                targetSpawnAudio.play();
+            } catch (error) {
+                console.warn('Target spawn audio could not be played.', error);
+            }
+        }
+
+        function showNextTarget() {
+            const hallPosition = chooseTargetPosition();
+            targetSequenceState.previousPosition = hallPosition.clone();
+
+            // CONFIGで定義したホール座標を、標的アンカーのローカル座標へ変換する。
+            anchors.HALL_ORIGIN.updateWorldMatrix(true, false);
+            anchors.TARGET_AREA_ORIGIN.updateWorldMatrix(true, false);
+            const worldPosition = anchors.HALL_ORIGIN.localToWorld(hallPosition.clone());
+            hologramTarget.position.copy(anchors.TARGET_AREA_ORIGIN.worldToLocal(worldPosition));
+
+            // 出現時のプレイヤー位置を向く。Pitch/Rollは常に0のままにする。
+            const playerWorldPosition = new THREE.Vector3();
+            camera.getWorldPosition(playerWorldPosition);
+            const playerLocalPosition = anchors.TARGET_AREA_ORIGIN.worldToLocal(playerWorldPosition);
+            const yaw = Math.atan2(
+                playerLocalPosition.x - hologramTarget.position.x,
+                playerLocalPosition.z - hologramTarget.position.z
+            );
+            hologramTarget.rotation.set(0, yaw, 0);
+            hologramTarget.visible = true;
+
+            targetSequenceState.shownCount += 1;
+            targetSequenceState.state = 'visible';
+            targetSequenceState.remaining = randomDuration(
+                CONFIG.targetSequence.visibleDurationMin,
+                CONFIG.targetSequence.visibleDurationMax
+            );
+            playTargetSpawnSound();
+        }
+
+        function completeTargetSequence() {
+            hologramTarget.visible = false;
+            targetSequenceState.state = 'complete';
+            targetSequenceState.remaining = 0;
+            console.log('Target sequence complete');
+        }
+
+        function startTargetSequence() {
+            if (targetSequenceState.state !== 'idle') return false;
+            hologramTarget.visible = false;
+            targetSequenceState.state = 'waiting';
+            targetSequenceState.remaining = CONFIG.targetSequence.initialDelay;
+            targetSequenceState.shownCount = 0;
+            targetSequenceState.previousPosition = null;
+            return true;
+        }
+
+        function updateTargetSequence(dt) {
+            if (targetSequenceState.state === 'idle') return;
+            if (targetSequenceState.state === 'complete') {
+                targetSequenceState.state = 'idle';
+                return;
+            }
+
+            targetSequenceState.remaining -= dt;
+            if (targetSequenceState.remaining > 0) return;
+
+            if (targetSequenceState.state === 'waiting') {
+                showNextTarget();
+            } else if (targetSequenceState.state === 'visible') {
+                hologramTarget.visible = false;
+                if (targetSequenceState.shownCount >= CONFIG.targetSequence.count) {
+                    completeTargetSequence();
+                } else {
+                    targetSequenceState.state = 'waiting';
+                    targetSequenceState.remaining = randomDuration(
+                        CONFIG.targetSequence.gapDurationMin,
+                        CONFIG.targetSequence.gapDurationMax
+                    );
+                }
+            }
+        }
+
+        // ---------------------------------------------------------
+        // WebXRコントローラによるボタンへの直接接触
+        // ---------------------------------------------------------
+        const controllerContactGeometry = new THREE.SphereGeometry(
+            CONFIG.interaction.controllerContactRadius,
+            10,
+            6
+        );
+        const controllerContactMaterial = new THREE.MeshBasicMaterial({
+            color: 0x70eaff,
+            transparent: true,
+            opacity: 0.38,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+        });
+        const controllers = [renderer.xr.getController(0), renderer.xr.getController(1)];
+        controllers.forEach((controller, index) => {
+            controller.name = `XR_CONTROLLER_${index}`;
+            controller.userData.isConnected = false;
+            controller.userData.isTouchingButton = false;
+
+            const contactPoint = new THREE.Mesh(controllerContactGeometry, controllerContactMaterial);
+            contactPoint.name = 'BUTTON_CONTACT_POINT';
+            contactPoint.position.z = CONFIG.interaction.controllerContactOffsetZ;
+            contactPoint.visible = false;
+            controller.add(contactPoint);
+
+            controller.addEventListener('connected', () => {
+                controller.userData.isConnected = true;
+                contactPoint.visible = true;
+            });
+            controller.addEventListener('disconnected', () => {
+                controller.userData.isConnected = false;
+                controller.userData.isTouchingButton = false;
+                contactPoint.visible = false;
+            });
+            anchors.PLAYER_START.add(controller);
+        });
+
+        const buttonPushRestY = buttonPush.position.y;
+        const buttonSurfaceY = buttonPushRestY + 0.02;
+        const controllerContactWorldPosition = new THREE.Vector3();
+        const controllerContactButtonPosition = new THREE.Vector3();
+
+        function updateButtonInteraction(dt) {
+            let isAnyControllerTouching = false;
+            anchors.BUTTON_ORIGIN.updateWorldMatrix(true, false);
+
+            for (const controller of controllers) {
+                if (!controller.userData.isConnected) continue;
+
+                controllerContactWorldPosition.set(0, 0, CONFIG.interaction.controllerContactOffsetZ);
+                controller.localToWorld(controllerContactWorldPosition);
+                controllerContactButtonPosition.copy(controllerContactWorldPosition);
+                anchors.BUTTON_ORIGIN.worldToLocal(controllerContactButtonPosition);
+
+                const radialDistance = Math.hypot(
+                    controllerContactButtonPosition.x,
+                    controllerContactButtonPosition.z
+                );
+                const isTouching =
+                    radialDistance <= CONFIG.interaction.buttonTouchRadius + CONFIG.interaction.controllerContactRadius &&
+                    Math.abs(controllerContactButtonPosition.y - buttonSurfaceY) <=
+                        CONFIG.interaction.buttonTouchHeight + CONFIG.interaction.controllerContactRadius;
+
+                if (isTouching && !controller.userData.isTouchingButton) {
+                    startTargetSequence();
+                }
+                controller.userData.isTouchingButton = isTouching;
+                isAnyControllerTouching = isAnyControllerTouching || isTouching;
+            }
+
+            const targetButtonY = isAnyControllerTouching
+                ? buttonPushRestY - CONFIG.interaction.buttonDepression
+                : buttonPushRestY;
+            const blend = Math.min(1, CONFIG.interaction.buttonAnimationSpeed * dt);
+            buttonPush.position.y += (targetButtonY - buttonPush.position.y) * blend;
+        }
+
         // PCブラウザ確認用のマウスクリック＆ドラッグによる見回し機能
         let isDragging = false;
         let previousMousePosition = { x: 0, y: 0 };
@@ -374,6 +801,8 @@
                 }
             }
 
+            updateButtonInteraction(dt);
+            updateTargetSequence(dt);
             renderer.render(scene, camera);
         });
     </script>
