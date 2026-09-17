@@ -135,15 +135,17 @@
                 triggerDebounceMs: 120
             },
             tracer: {
-                segments: 6,
-                tailLength: 0.8,
+                width: 0.010,
+                tailLength: 1.4,
                 maxTravelDistance: 30,
                 impactLinger: 0.025
             },
             muzzleFlash: {
                 duration: 0.028,
-                forwardOffset: 0.03,
+                forwardOffset: 0.04,
                 length: 0.14,
+                scale: 2.5,
+                opacity: 0.72,
                 imageAspect: 673 / 508,
                 coreU: 0.09
             },
@@ -804,29 +806,31 @@
         const muzzleWorld = new THREE.Vector3();
         const aimWorld = new THREE.Vector3();
         const shotDirection = new THREE.Vector3();
-        const tracerPointCount = Math.max(2, Math.floor(CONFIG.tracer.segments) + 1);
+        const tracerForwardAxis = new THREE.Vector3(1, 0, 0);
+        const tracerGeometry = new THREE.PlaneGeometry(1, 1);
         const tracerMaterial = new THREE.ShaderMaterial({
             uniforms: {
                 color: { value: new THREE.Color(0xfff27a) }
             },
             vertexShader: `
-                attribute float alpha;
-                varying float vAlpha;
+                varying float vProgress;
                 void main() {
-                    vAlpha = alpha;
+                    vProgress = uv.x;
                     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
                 }
             `,
             fragmentShader: `
                 uniform vec3 color;
-                varying float vAlpha;
+                varying float vProgress;
                 void main() {
-                    gl_FragColor = vec4(color, vAlpha);
+                    float alpha = smoothstep(0.0, 0.7, vProgress);
+                    gl_FragColor = vec4(color, alpha);
                 }
             `,
             transparent: true,
             blending: THREE.AdditiveBlending,
             depthWrite: false,
+            side: THREE.DoubleSide,
             toneMapped: false
         });
         const activeTracers = [];
@@ -861,7 +865,7 @@
         const muzzleFlashMaterial = new THREE.MeshBasicMaterial({
             map: muzzleFlashTexture,
             transparent: true,
-            opacity: 1,
+            opacity: CONFIG.muzzleFlash.opacity,
             blending: THREE.AdditiveBlending,
             depthWrite: false,
             side: THREE.DoubleSide,
@@ -877,11 +881,17 @@
             0,
             0
         );
-        const muzzleFlash = new THREE.Mesh(muzzleFlashGeometry, muzzleFlashMaterial);
+        const muzzleFlashPlaneA = new THREE.Mesh(muzzleFlashGeometry, muzzleFlashMaterial);
+        const muzzleFlashPlaneB = new THREE.Mesh(muzzleFlashGeometry, muzzleFlashMaterial);
+        muzzleFlashPlaneB.rotation.x = Math.PI / 2;
+        for (const plane of [muzzleFlashPlaneA, muzzleFlashPlaneB]) {
+            plane.frustumCulled = false;
+            plane.renderOrder = 10;
+        }
+        const muzzleFlash = new THREE.Group();
         muzzleFlash.name = 'MUZZLE_FLASH';
+        muzzleFlash.add(muzzleFlashPlaneA, muzzleFlashPlaneB);
         muzzleFlash.visible = false;
-        muzzleFlash.frustumCulled = false;
-        muzzleFlash.renderOrder = 10;
         scene.add(muzzleFlash);
         let muzzleFlashRemaining = 0;
         const muzzleFlashForward = new THREE.Vector3();
@@ -1161,24 +1171,22 @@
         function createShotTracer(origin, shotDirectionVector, totalLength) {
             if (totalLength < 0.0001) return;
             const direction = shotDirectionVector.clone();
-            const positions = new Float32Array(tracerPointCount * 3);
-            const alphas = new Float32Array(tracerPointCount);
-            for (let index = 0; index < tracerPointCount; index++) {
-                const progress = index / (tracerPointCount - 1);
-                // 後端だけを滑らかに消し、前方約30%は十分な明るさを保つ。
-                alphas[index] = THREE.MathUtils.smoothstep(progress, 0, 0.7);
+            const planeA = new THREE.Mesh(tracerGeometry, tracerMaterial);
+            const planeB = new THREE.Mesh(tracerGeometry, tracerMaterial);
+            planeB.rotation.x = Math.PI / 2;
+            for (const plane of [planeA, planeB]) {
+                plane.visible = false;
+                plane.frustumCulled = false;
             }
-            const geometry = new THREE.BufferGeometry();
-            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-            geometry.setAttribute('alpha', new THREE.BufferAttribute(alphas, 1));
-            const tracer = new THREE.Line(geometry, tracerMaterial);
+            const tracer = new THREE.Group();
             tracer.name = 'SHOT_TRACER';
             tracer.position.copy(origin);
-            tracer.frustumCulled = false;
+            tracer.quaternion.setFromUnitVectors(tracerForwardAxis, direction);
+            tracer.add(planeA, planeB);
             scene.add(tracer);
             activeTracers.push({
                 object: tracer,
-                direction,
+                planes: [planeA, planeB],
                 travelled: 0,
                 maxDistance: Math.min(totalLength, CONFIG.tracer.maxTravelDistance),
                 speed: Math.max(1, Number(gunDevSettings.bulletSpeed) || 1),
@@ -1190,16 +1198,13 @@
         function updateShotTracerVisual(tracer) {
             const trailLength = Math.min(CONFIG.tracer.tailLength, tracer.travelled);
             const tailDistance = tracer.travelled - trailLength;
-            const positions = tracer.object.geometry.attributes.position.array;
-            for (let index = 0; index < tracerPointCount; index++) {
-                const progress = index / (tracerPointCount - 1);
-                const distance = tailDistance + trailLength * progress;
-                const offset = index * 3;
-                positions[offset] = tracer.direction.x * distance;
-                positions[offset + 1] = tracer.direction.y * distance;
-                positions[offset + 2] = tracer.direction.z * distance;
+            const centerDistance = tailDistance + trailLength / 2;
+            const visible = trailLength >= 0.0001;
+            for (const plane of tracer.planes) {
+                plane.position.set(centerDistance, 0, 0);
+                plane.scale.set(trailLength, CONFIG.tracer.width, 1);
+                plane.visible = visible;
             }
-            tracer.object.geometry.attributes.position.needsUpdate = true;
         }
 
         function updateShotTracers(dt) {
@@ -1220,7 +1225,6 @@
                 }
 
                 scene.remove(tracer.object);
-                tracer.object.geometry.dispose();
                 activeTracers.splice(index, 1);
             }
         }
@@ -1258,8 +1262,8 @@
                 muzzleFlashForward,
                 CONFIG.muzzleFlash.forwardOffset
             );
-            muzzleFlash.scale.setScalar(1);
-            muzzleFlashMaterial.opacity = 1;
+            muzzleFlash.scale.setScalar(CONFIG.muzzleFlash.scale);
+            muzzleFlashMaterial.opacity = CONFIG.muzzleFlash.opacity;
             muzzleFlashRemaining = CONFIG.muzzleFlash.duration;
             muzzleFlash.visible = true;
         }
@@ -1272,7 +1276,7 @@
                 muzzleFlashRemaining = 0;
                 return;
             }
-            muzzleFlashMaterial.opacity = Math.min(
+            muzzleFlashMaterial.opacity = CONFIG.muzzleFlash.opacity * Math.min(
                 1,
                 muzzleFlashRemaining / (CONFIG.muzzleFlash.duration * 0.5)
             );
