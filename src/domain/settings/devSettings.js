@@ -1,5 +1,11 @@
 export function defaultDevSettings() {
-  return { bulletSpeed: 25, gunScale: 1.0 };
+  return {
+    settingsVersion: 2,
+    bulletSpeed: 55,
+    gunScale: 1.0,
+    turnSpeed: 90,
+    laserSightEnabled: false,
+  };
 }
 
 export function adjustedDevSettingValue(currentValue, param, direction) {

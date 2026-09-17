@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GUN_PARAMS, DEV_PARAMS } from '../config/settingsSchemas.js';
+import { GUN_PARAMS, DEV_PARAMS, DEV_TOGGLES } from '../config/settingsSchemas.js';
 import { defaultOffsets, adjustedGunParamValue } from '../domain/settings/calibration.js';
 import { defaultDevSettings, adjustedDevSettingValue } from '../domain/settings/devSettings.js';
 import { saveGunOffsets, saveDevSettings } from '../browser/localStorageSettingsRepository.js';
@@ -189,6 +189,36 @@ export class SettingsPanel {
     return startY + params.length * rowHeight;
   }
 
+  drawToggleRows(params, values, startY) {
+    const rowHeight = 64;
+    params.forEach((param, index) => {
+      const y = startY + index * rowHeight;
+      const enabled = Boolean(values[param.key]);
+      const buttonX = CANVAS_W - 164;
+      const buttonW = 136;
+      const ctx = this.context;
+      ctx.textAlign = 'left';
+      ctx.font = '20px sans-serif';
+      ctx.fillStyle = '#c8d6e8';
+      ctx.fillText(param.label, 24, y + 30);
+      ctx.fillStyle = enabled ? '#237a4b' : '#4b5360';
+      ctx.fillRect(buttonX, y, buttonW, 44);
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 20px sans-serif';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(enabled ? 'ON' : 'OFF', buttonX + buttonW / 2, y + 29);
+      this.hitAreas.push({
+        action: 'toggleDev',
+        key: param.key,
+        x0: buttonX,
+        y0: y,
+        x1: buttonX + buttonW,
+        y1: y + 44,
+      });
+    });
+    return startY + params.length * rowHeight;
+  }
+
   drawResetButton(y, action) {
     const ctx = this.context;
     ctx.fillStyle = '#5a2f2f';
@@ -214,8 +244,9 @@ export class SettingsPanel {
   drawDevMenu() {
     this.drawChrome('System Settings');
     this.drawBackButton();
-    const afterRows = this.drawParamRows(DEV_PARAMS, this.devSettings, 88, 'adjustDev');
-    this.drawResetButton(afterRows + 8, 'resetDev');
+    const afterParams = this.drawParamRows(DEV_PARAMS, this.devSettings, 76, 'adjustDev');
+    const afterToggles = this.drawToggleRows(DEV_TOGGLES, this.devSettings, afterParams);
+    this.drawResetButton(afterToggles + 4, 'resetDev');
     this.texture.needsUpdate = true;
   }
 
@@ -244,6 +275,15 @@ export class SettingsPanel {
       case 'adjustDev': {
         const param = DEV_PARAMS.find(({ key }) => key === area.key);
         this.devSettings[area.key] = adjustedDevSettingValue(this.devSettings[area.key], param, area.direction);
+        saveDevSettings(this.devSettings);
+        this.onDevSettingsChanged();
+        this.drawDevMenu();
+        break;
+      }
+      case 'toggleDev': {
+        const param = DEV_TOGGLES.find(({ key }) => key === area.key);
+        if (!param) break;
+        this.devSettings[param.key] = !this.devSettings[param.key];
         saveDevSettings(this.devSettings);
         this.onDevSettingsChanged();
         this.drawDevMenu();

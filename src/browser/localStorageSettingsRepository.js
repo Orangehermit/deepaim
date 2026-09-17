@@ -49,7 +49,20 @@ export function loadDevSettings() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_DEV);
     if (!raw) return defaultDevSettings();
-    return Object.assign(defaultDevSettings(), JSON.parse(raw));
+    const defaults = defaultDevSettings();
+    const saved = JSON.parse(raw);
+    const settings = Object.assign({}, defaults, saved);
+
+    // Version 1 used 25 m/s as the default. Migrate only that legacy default;
+    // explicitly customized speeds are kept as-is.
+    if (!saved.settingsVersion && saved.bulletSpeed === 25) {
+      settings.bulletSpeed = defaults.bulletSpeed;
+    }
+    if (saved.settingsVersion !== defaults.settingsVersion) {
+      settings.settingsVersion = defaults.settingsVersion;
+      localStorage.setItem(STORAGE_KEY_DEV, JSON.stringify(settings, null, 2));
+    }
+    return settings;
   } catch (e) {
     console.warn('[DeepAim] dev settings load failed, using defaults', e);
     return defaultDevSettings();

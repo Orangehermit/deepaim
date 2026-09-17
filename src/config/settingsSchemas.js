@@ -10,4 +10,9 @@ export const GUN_PARAMS = [
 export const DEV_PARAMS = [
   { key: 'bulletSpeed', label: 'Bullet Speed', unit: 'm/s', step: 1, min: 1, max: 300 },
   { key: 'gunScale',    label: 'Gun Scale',    unit: '×',   step: 0.02, min: 0.8, max: 1.5 },
+  { key: 'turnSpeed',   label: 'Turn Speed',   unit: '°/s', step: 15, min: 30, max: 180 },
+];
+
+export const DEV_TOGGLES = [
+  { key: 'laserSightEnabled', label: 'Laser Sight' },
 ];

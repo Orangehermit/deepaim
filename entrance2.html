@@ -135,13 +135,20 @@
                 triggerDebounceMs: 120
             },
             tracer: {
-                duration: 0.06,
                 width: 0.018,
                 segments: 6,
-                endWidthScale: 0.35,
-                startOpacity: 0.95,
-                endOpacity: 0.18,
-                segmentFill: 1.0
+                tailLength: 0.8,
+                maxTravelDistance: 30,
+                tailWidthScale: 0.28,
+                tailOpacity: 0.08,
+                headOpacity: 0.92,
+                segmentFill: 0.92,
+                impactLinger: 0.025
+            },
+            muzzleFlash: {
+                duration: 0.045,
+                radius: 0.035,
+                length: 0.14
             },
             interaction: {
                 controllerContactRadius: 0.055,
@@ -802,22 +809,90 @@
         const shotDirection = new THREE.Vector3();
         const tracerSegmentCount = Math.max(1, Math.floor(CONFIG.tracer.segments));
         const tracerUnitGeometry = new THREE.CylinderGeometry(1, 1, 1, 6, 1, false);
+        const tracerHeadGeometry = new THREE.SphereGeometry(1, 8, 6);
         const tracerMaterials = Array.from({ length: tracerSegmentCount }, (_, index) => {
             const progress = tracerSegmentCount === 1 ? 0 : index / (tracerSegmentCount - 1);
             return new THREE.MeshBasicMaterial({
                 color: 0xfff27a,
                 transparent: true,
                 opacity: THREE.MathUtils.lerp(
-                    CONFIG.tracer.startOpacity,
-                    CONFIG.tracer.endOpacity,
+                    CONFIG.tracer.tailOpacity,
+                    CONFIG.tracer.headOpacity,
                     progress
                 ),
                 blending: THREE.AdditiveBlending,
-                depthWrite: false
+                depthWrite: false,
+                toneMapped: false
             });
+        });
+        const tracerHeadMaterial = new THREE.MeshBasicMaterial({
+            color: 0xffffff,
+            transparent: true,
+            opacity: 0.98,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+            toneMapped: false
         });
         const tracerUpAxis = new THREE.Vector3(0, 1, 0);
         const activeTracers = [];
+
+        const laserGeometry = new THREE.BufferGeometry();
+        laserGeometry.setAttribute(
+            'position',
+            new THREE.BufferAttribute(new Float32Array(6), 3)
+        );
+        const laserSight = new THREE.Line(
+            laserGeometry,
+            new THREE.LineBasicMaterial({
+                color: 0xff3030,
+                transparent: true,
+                opacity: 0.9,
+                depthWrite: false
+            })
+        );
+        laserSight.name = 'LASER_SIGHT';
+        laserSight.visible = false;
+        laserSight.frustumCulled = false;
+        scene.add(laserSight);
+        const laserEnd = new THREE.Vector3();
+
+        const muzzleFlashMaterial = new THREE.MeshBasicMaterial({
+            color: 0xffd36a,
+            transparent: true,
+            opacity: 1,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+            toneMapped: false
+        });
+        const muzzleFlash = new THREE.Group();
+        muzzleFlash.name = 'MUZZLE_FLASH';
+        const muzzleFlashCore = new THREE.Mesh(
+            new THREE.SphereGeometry(CONFIG.muzzleFlash.radius, 8, 6),
+            muzzleFlashMaterial
+        );
+        const muzzleFlashCone = new THREE.Mesh(
+            new THREE.ConeGeometry(
+                CONFIG.muzzleFlash.radius,
+                CONFIG.muzzleFlash.length,
+                8,
+                1,
+                true
+            ),
+            muzzleFlashMaterial
+        );
+        muzzleFlashCone.position.y = CONFIG.muzzleFlash.length / 2;
+        muzzleFlash.add(muzzleFlashCore, muzzleFlashCone);
+        muzzleFlash.visible = false;
+        scene.add(muzzleFlash);
+        let muzzleFlashRemaining = 0;
+
+        const goldGunMaterial = new THREE.MeshStandardMaterial({
+            color: 0xffc83d,
+            metalness: 0.85,
+            roughness: 0.28,
+            emissive: 0x2a1600,
+            emissiveIntensity: 0.22
+        });
 
         let loadedGun = null;
         let rightController = null;
@@ -866,6 +941,21 @@
             }
         }
 
+        function applyGoldGunMaterial(gunRoot) {
+            const replacedMaterials = new Set();
+            gunRoot.traverse((object) => {
+                if (!object.isMesh) return;
+                const materials = Array.isArray(object.material)
+                    ? object.material
+                    : [object.material];
+                for (const material of materials) {
+                    if (material && material !== goldGunMaterial) replacedMaterials.add(material);
+                }
+                object.material = goldGunMaterial;
+            });
+            for (const material of replacedMaterials) material.dispose();
+        }
+
         function loadDesertEagle() {
             gunLoader.load(
                 gunDefinition.modelUrl,
@@ -882,6 +972,7 @@
 
                     // GLBのグリップ原点と、既存Deep Aimのscale・較正値をそのまま利用する。
                     gunRoot.position.set(0, 0, 0);
+                    applyGoldGunMaterial(gunRoot);
                     loadedGun = {
                         definition: gunDefinition,
                         offsets: gunOffsets,
@@ -1030,59 +1121,148 @@
             return overlappingHits[0];
         }
 
-        function createShotTracer(origin, endPoint) {
-            const direction = endPoint.clone().sub(origin);
-            const totalLength = direction.length();
+        function updateLaserSight() {
+            if (!gunDevSettings.laserSightEnabled || settingsPanel.isOpen) {
+                laserSight.visible = false;
+                return;
+            }
+
+            const shotPose = getShotPose();
+            if (!shotPose) {
+                laserSight.visible = false;
+                return;
+            }
+
+            const hit = findTargetHit(shotPose.origin, shotPose.direction);
+            if (hit) {
+                laserEnd.copy(hit.point);
+            } else {
+                laserEnd.copy(shotPose.origin).addScaledVector(
+                    shotPose.direction,
+                    CONFIG.gun.rayDistance
+                );
+            }
+
+            const positions = laserSight.geometry.attributes.position.array;
+            positions[0] = shotPose.origin.x;
+            positions[1] = shotPose.origin.y;
+            positions[2] = shotPose.origin.z;
+            positions[3] = laserEnd.x;
+            positions[4] = laserEnd.y;
+            positions[5] = laserEnd.z;
+            laserSight.geometry.attributes.position.needsUpdate = true;
+            laserSight.visible = true;
+        }
+
+        function createShotTracer(origin, shotDirectionVector, totalLength) {
             if (totalLength < 0.0001) return;
-            direction.normalize();
+            const direction = shotDirectionVector.clone();
 
             const tracer = new THREE.Group();
             tracer.name = 'SHOT_TRACER';
-            const segmentLength = totalLength / tracerSegmentCount;
-            const segmentFill = THREE.MathUtils.clamp(CONFIG.tracer.segmentFill, 0.05, 1.0);
+            tracer.position.copy(origin);
+            const segments = [];
             for (let index = 0; index < tracerSegmentCount; index++) {
                 const progress = tracerSegmentCount === 1 ? 0 : index / (tracerSegmentCount - 1);
-                const widthScale = THREE.MathUtils.lerp(1, CONFIG.tracer.endWidthScale, progress);
+                const widthScale = THREE.MathUtils.lerp(
+                    CONFIG.tracer.tailWidthScale,
+                    1,
+                    progress
+                );
                 const radius = CONFIG.tracer.width * widthScale / 2;
-                const visibleLength = tracerSegmentCount === 1
-                    ? totalLength
-                    : segmentLength * segmentFill;
-                let centerDistance = segmentLength * (index + 0.5);
-                if (index === 0) centerDistance = visibleLength / 2;
-                if (index === tracerSegmentCount - 1) {
-                    centerDistance = totalLength - visibleLength / 2;
-                }
                 const segment = new THREE.Mesh(tracerUnitGeometry, tracerMaterials[index]);
-                segment.position.copy(origin).addScaledVector(
-                    direction,
-                    centerDistance
-                );
                 segment.quaternion.setFromUnitVectors(tracerUpAxis, direction);
-                segment.scale.set(
-                    radius,
-                    visibleLength,
-                    radius
-                );
+                segment.scale.set(radius, 0.001, radius);
+                segment.visible = false;
                 segment.frustumCulled = false;
                 tracer.add(segment);
+                segments.push({ mesh: segment, radius });
             }
+
+            const head = new THREE.Mesh(tracerHeadGeometry, tracerHeadMaterial);
+            const headRadius = CONFIG.tracer.width * 0.65;
+            head.scale.setScalar(headRadius);
+            head.frustumCulled = false;
+            tracer.add(head);
 
             scene.add(tracer);
             activeTracers.push({
                 object: tracer,
-                remaining: CONFIG.tracer.duration
+                segments,
+                head,
+                direction,
+                travelled: 0,
+                maxDistance: Math.min(totalLength, CONFIG.tracer.maxTravelDistance),
+                speed: Math.max(1, Number(gunDevSettings.bulletSpeed) || 1),
+                arrived: false,
+                remaining: CONFIG.tracer.impactLinger
             });
+        }
+
+        function updateShotTracerVisual(tracer) {
+            const trailLength = Math.min(CONFIG.tracer.tailLength, tracer.travelled);
+            const tailDistance = tracer.travelled - trailLength;
+            const segmentLength = trailLength / tracerSegmentCount;
+            const visibleLength = segmentLength * THREE.MathUtils.clamp(
+                CONFIG.tracer.segmentFill,
+                0.05,
+                1
+            );
+
+            tracer.segments.forEach(({ mesh, radius }, index) => {
+                if (visibleLength < 0.0001) {
+                    mesh.visible = false;
+                    return;
+                }
+                const centerDistance = tailDistance + segmentLength * (index + 0.5);
+                mesh.position.copy(tracer.direction).multiplyScalar(centerDistance);
+                mesh.scale.set(radius, visibleLength, radius);
+                mesh.visible = true;
+            });
+            tracer.head.position.copy(tracer.direction).multiplyScalar(tracer.travelled);
         }
 
         function updateShotTracers(dt) {
             for (let index = activeTracers.length - 1; index >= 0; index--) {
                 const tracer = activeTracers[index];
-                tracer.remaining -= dt;
-                if (tracer.remaining > 0) continue;
+                if (!tracer.arrived) {
+                    tracer.travelled = Math.min(
+                        tracer.maxDistance,
+                        tracer.travelled + tracer.speed * dt
+                    );
+                    updateShotTracerVisual(tracer);
+                    tracer.arrived = tracer.travelled >= tracer.maxDistance;
+                    if (tracer.arrived) tracer.remaining = CONFIG.tracer.impactLinger;
+                    continue;
+                } else {
+                    tracer.remaining -= dt;
+                    if (tracer.remaining > 0) continue;
+                }
 
                 scene.remove(tracer.object);
                 activeTracers.splice(index, 1);
             }
+        }
+
+        function showMuzzleFlash(origin, direction) {
+            muzzleFlash.position.copy(origin);
+            muzzleFlash.quaternion.setFromUnitVectors(tracerUpAxis, direction);
+            muzzleFlash.rotateY(Math.random() * Math.PI * 2);
+            muzzleFlash.scale.setScalar(THREE.MathUtils.lerp(0.85, 1.15, Math.random()));
+            muzzleFlashMaterial.opacity = 1;
+            muzzleFlashRemaining = CONFIG.muzzleFlash.duration;
+            muzzleFlash.visible = true;
+        }
+
+        function updateMuzzleFlash(dt) {
+            if (!muzzleFlash.visible) return;
+            muzzleFlashRemaining -= dt;
+            if (muzzleFlashRemaining <= 0) {
+                muzzleFlash.visible = false;
+                muzzleFlashRemaining = 0;
+                return;
+            }
+            muzzleFlashMaterial.opacity = muzzleFlashRemaining / CONFIG.muzzleFlash.duration;
         }
 
         function fireDesertEagle() {
@@ -1091,15 +1271,11 @@
 
             playGunshotSound();
             pulseRightController();
+            showMuzzleFlash(shotPose.origin, shotPose.direction);
 
             const hit = findTargetHit(shotPose.origin, shotPose.direction);
-            const tracerEnd = hit
-                ? hit.point
-                : shotPose.origin.clone().addScaledVector(
-                    shotPose.direction,
-                    CONFIG.gun.rayDistance
-                );
-            createShotTracer(shotPose.origin, tracerEnd);
+            const tracerDistance = hit ? hit.distance : CONFIG.gun.rayDistance;
+            createShotTracer(shotPose.origin, shotPose.direction, tracerDistance);
             if (!hit) return;
 
             console.log(`Hit: ${hit.object.userData.hitZone}`);
@@ -1297,44 +1473,60 @@
         }
 
         const clock = new THREE.Clock();
+        const locomotionUp = new THREE.Vector3(0, 1, 0);
+        const locomotionForward = new THREE.Vector3();
+        const locomotionRight = new THREE.Vector3();
+        const locomotionMove = new THREE.Vector3();
+        const turnPivot = new THREE.Vector3();
+        const turnRigOffset = new THREE.Vector3();
+
+        function getThumbstickAxes(inputSource) {
+            const axes = inputSource?.gamepad?.axes;
+            if (!axes || axes.length < 2) return null;
+            const offset = axes.length >= 4 ? 2 : 0;
+            return { x: axes[offset] || 0, y: axes[offset + 1] || 0 };
+        }
+
+        function isShootingInputHeld() {
+            return Boolean(rightController?.userData.isTriggerHeld);
+        }
 
         renderer.setAnimationLoop(function () {
             const dt = clock.getDelta();
 
             // WebXRのコントローラスティック移動（ロコモーション）処理
-            if (renderer.xr.isPresenting) {
+            if (renderer.xr.isPresenting && !isShootingInputHeld()) {
                 const session = renderer.xr.getSession();
                 if (session && session.inputSources) {
                     for (const source of session.inputSources) {
-                        // gamepadプロパティを持つコントローラのみ処理
-                        if (source.gamepad && source.gamepad.axes.length >= 4) {
-                            // Quest等の標準: axes[2]がスティックのX軸, axes[3]がY軸
-                            const xAxis = source.gamepad.axes[2];
-                            const yAxis = source.gamepad.axes[3];
+                        const axes = getThumbstickAxes(source);
+                        if (!axes) continue;
 
-                            // デッドゾーンの設定（スティックのわずかな傾きや遊びを無視）
-                            if (Math.abs(xAxis) > 0.1 || Math.abs(yAxis) > 0.1) {
-                                const speed = 3.0 * dt; // 移動速度 (秒速3メートル)
+                        if (source === leftInputSource) {
+                            if (Math.abs(axes.x) <= 0.1 && Math.abs(axes.y) <= 0.1) continue;
+                            const speed = 3.0 * dt;
+                            camera.getWorldDirection(locomotionForward);
+                            locomotionForward.y = 0;
+                            if (locomotionForward.lengthSq() < 0.000001) continue;
+                            locomotionForward.normalize();
+                            locomotionRight.crossVectors(locomotionForward, locomotionUp).normalize();
+                            locomotionMove.set(0, 0, 0);
+                            locomotionMove.addScaledVector(locomotionForward, -axes.y * speed);
+                            locomotionMove.addScaledVector(locomotionRight, axes.x * speed);
+                            anchors.PLAYER_START.position.add(locomotionMove);
+                        } else if (source === rightInputSource && Math.abs(axes.x) > 0.1) {
+                            const turnSpeed = THREE.MathUtils.degToRad(
+                                Number(gunDevSettings.turnSpeed) || 90
+                            );
+                            const yawDelta = -axes.x * turnSpeed * dt;
 
-                                // ヘッドセット(カメラ)が向いている水平方向を計算
-                                const cameraDir = new THREE.Vector3();
-                                camera.getWorldDirection(cameraDir);
-                                cameraDir.y = 0; // 上下方向の浮遊を無効化（常に床を這う）
-                                cameraDir.normalize();
-
-                                // ヘッドセットの右方向ベクトルを計算
-                                const cameraRight = new THREE.Vector3();
-                                cameraRight.crossVectors(cameraDir, new THREE.Vector3(0, 1, 0)).normalize();
-
-                                // スティックの入力値から移動ベクトルを合成
-                                // ※Y軸は前に倒すと負(-1)になる仕様のため、反転させる
-                                const moveVec = new THREE.Vector3();
-                                moveVec.addScaledVector(cameraDir, -yAxis * speed);
-                                moveVec.addScaledVector(cameraRight, xAxis * speed);
-
-                                // プレイヤーの空間全体（Rig）を移動
-                                anchors.PLAYER_START.position.add(moveVec);
-                            }
+                            // HMDの現在位置を軸にRig全体を回し、物理的な頭のオフセットで
+                            // プレイヤーが円運動してしまうのを防ぐ。
+                            camera.getWorldPosition(turnPivot);
+                            turnRigOffset.copy(anchors.PLAYER_START.position).sub(turnPivot);
+                            turnRigOffset.applyAxisAngle(locomotionUp, yawDelta);
+                            anchors.PLAYER_START.position.copy(turnPivot).add(turnRigOffset);
+                            anchors.PLAYER_START.rotation.y += yawDelta;
                         }
                     }
                 }
@@ -1344,6 +1536,8 @@
             updateButtonInteraction(dt);
             updateTargetSequence(dt);
             updateShotTracers(dt);
+            updateMuzzleFlash(dt);
+            updateLaserSight();
             updateSettingsPointer();
             renderer.render(scene, camera);
         });
