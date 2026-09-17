@@ -37,6 +37,9 @@
         import * as THREE from 'three';
         import { VRButton } from 'three/addons/webxr/VRButton.js';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { Line2 } from 'three/addons/lines/Line2.js';
+        import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
+        import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
         import { ENTRANCE_DEFAULT_GUN } from './src/config/guns.js';
         import { loadGunOffsets, loadDevSettings } from './src/browser/localStorageSettingsRepository.js';
         import { SettingsPanel } from './src/entrance/SettingsPanel.js';
@@ -135,8 +138,9 @@
                 triggerDebounceMs: 120
             },
             tracer: {
-                width: 0.010,
-                tailLength: 1.4,
+                segments: 6,
+                tailLength: 1.1,
+                lineWidth: 3,
                 maxTravelDistance: 30,
                 impactLinger: 0.025
             },
@@ -806,34 +810,34 @@
         const muzzleWorld = new THREE.Vector3();
         const aimWorld = new THREE.Vector3();
         const shotDirection = new THREE.Vector3();
-        const tracerForwardAxis = new THREE.Vector3(1, 0, 0);
-        const tracerGeometry = new THREE.PlaneGeometry(1, 1);
-        const tracerMaterial = new THREE.ShaderMaterial({
-            uniforms: {
-                color: { value: new THREE.Color(0xfff27a) }
-            },
-            vertexShader: `
-                varying float vProgress;
-                void main() {
-                    vProgress = uv.x;
-                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-                }
-            `,
-            fragmentShader: `
-                uniform vec3 color;
-                varying float vProgress;
-                void main() {
-                    float alpha = smoothstep(0.0, 0.7, vProgress);
-                    gl_FragColor = vec4(color, alpha);
-                }
-            `,
+        const tracerPointCount = Math.max(2, Math.floor(CONFIG.tracer.segments) + 1);
+        const tracerBaseColor = new THREE.Color(0xfff27a);
+        const tracerMaterial = new LineMaterial({
+            color: 0xffffff,
+            linewidth: CONFIG.tracer.lineWidth,
+            vertexColors: true,
             transparent: true,
+            opacity: 1,
             blending: THREE.AdditiveBlending,
             depthWrite: false,
-            side: THREE.DoubleSide,
             toneMapped: false
         });
+        const tracerResolution = new THREE.Vector2();
         const activeTracers = [];
+
+        function updateTracerMaterialResolution() {
+            if (renderer.xr.isPresenting) {
+                const xrCamera = renderer.xr.getCamera(camera);
+                const viewport = xrCamera.cameras?.[0]?.viewport;
+                if (viewport?.z > 0 && viewport?.w > 0) {
+                    tracerMaterial.resolution.set(viewport.z, viewport.w);
+                    return;
+                }
+            }
+            renderer.getDrawingBufferSize(tracerResolution);
+            tracerMaterial.resolution.copy(tracerResolution);
+        }
+        updateTracerMaterialResolution();
 
         const laserGeometry = new THREE.BufferGeometry();
         laserGeometry.setAttribute(
@@ -1171,22 +1175,30 @@
         function createShotTracer(origin, shotDirectionVector, totalLength) {
             if (totalLength < 0.0001) return;
             const direction = shotDirectionVector.clone();
-            const planeA = new THREE.Mesh(tracerGeometry, tracerMaterial);
-            const planeB = new THREE.Mesh(tracerGeometry, tracerMaterial);
-            planeB.rotation.x = Math.PI / 2;
-            for (const plane of [planeA, planeB]) {
-                plane.visible = false;
-                plane.frustumCulled = false;
+            const positions = new Float32Array(tracerPointCount * 3);
+            const colors = new Float32Array(tracerPointCount * 3);
+            for (let index = 0; index < tracerPointCount; index++) {
+                const progress = index / (tracerPointCount - 1);
+                const brightness = THREE.MathUtils.smoothstep(progress, 0, 0.7);
+                const offset = index * 3;
+                colors[offset] = tracerBaseColor.r * brightness;
+                colors[offset + 1] = tracerBaseColor.g * brightness;
+                colors[offset + 2] = tracerBaseColor.b * brightness;
             }
-            const tracer = new THREE.Group();
+            const geometry = new LineGeometry();
+            geometry.setPositions(positions);
+            geometry.setColors(colors);
+            geometry.attributes.instanceStart.data.setUsage(THREE.DynamicDrawUsage);
+            const tracer = new Line2(geometry, tracerMaterial);
             tracer.name = 'SHOT_TRACER';
             tracer.position.copy(origin);
-            tracer.quaternion.setFromUnitVectors(tracerForwardAxis, direction);
-            tracer.add(planeA, planeB);
+            tracer.visible = false;
+            tracer.frustumCulled = false;
             scene.add(tracer);
+            updateTracerMaterialResolution();
             activeTracers.push({
                 object: tracer,
-                planes: [planeA, planeB],
+                direction,
                 travelled: 0,
                 maxDistance: Math.min(totalLength, CONFIG.tracer.maxTravelDistance),
                 speed: Math.max(1, Number(gunDevSettings.bulletSpeed) || 1),
@@ -1198,16 +1210,32 @@
         function updateShotTracerVisual(tracer) {
             const trailLength = Math.min(CONFIG.tracer.tailLength, tracer.travelled);
             const tailDistance = tracer.travelled - trailLength;
-            const centerDistance = tailDistance + trailLength / 2;
-            const visible = trailLength >= 0.0001;
-            for (const plane of tracer.planes) {
-                plane.position.set(centerDistance, 0, 0);
-                plane.scale.set(trailLength, CONFIG.tracer.width, 1);
-                plane.visible = visible;
+            const instanceStart = tracer.object.geometry.attributes.instanceStart;
+            const instanceEnd = tracer.object.geometry.attributes.instanceEnd;
+            for (let index = 0; index < tracerPointCount - 1; index++) {
+                const startProgress = index / (tracerPointCount - 1);
+                const endProgress = (index + 1) / (tracerPointCount - 1);
+                const startDistance = tailDistance + trailLength * startProgress;
+                const endDistance = tailDistance + trailLength * endProgress;
+                instanceStart.setXYZ(
+                    index,
+                    tracer.direction.x * startDistance,
+                    tracer.direction.y * startDistance,
+                    tracer.direction.z * startDistance
+                );
+                instanceEnd.setXYZ(
+                    index,
+                    tracer.direction.x * endDistance,
+                    tracer.direction.y * endDistance,
+                    tracer.direction.z * endDistance
+                );
             }
+            instanceStart.data.needsUpdate = true;
+            tracer.object.visible = trailLength >= 0.0001;
         }
 
         function updateShotTracers(dt) {
+            if (activeTracers.length > 0) updateTracerMaterialResolution();
             for (let index = activeTracers.length - 1; index >= 0; index--) {
                 const tracer = activeTracers[index];
                 if (!tracer.arrived) {
@@ -1225,6 +1253,7 @@
                 }
 
                 scene.remove(tracer.object);
+                tracer.object.geometry.dispose();
                 activeTracers.splice(index, 1);
             }
         }
@@ -1487,6 +1516,7 @@
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
+            updateTracerMaterialResolution();
         }
 
         const clock = new THREE.Clock();
