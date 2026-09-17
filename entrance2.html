@@ -139,10 +139,8 @@
             },
             tracer: {
                 segments: 6,
-                tailLength: 1.1,
                 lineWidth: 3,
-                maxTravelDistance: 30,
-                impactLinger: 0.025
+                maxTravelDistance: 30
             },
             muzzleFlash: {
                 duration: 0.028,
@@ -1173,6 +1171,7 @@
         }
 
         function createShotTracer(origin, shotDirectionVector, totalLength) {
+            if (!gunDevSettings.tracerEnabled) return;
             if (totalLength < 0.0001) return;
             const direction = shotDirectionVector.clone();
             const positions = new Float32Array(tracerPointCount * 3);
@@ -1202,13 +1201,14 @@
                 travelled: 0,
                 maxDistance: Math.min(totalLength, CONFIG.tracer.maxTravelDistance),
                 speed: Math.max(1, Number(gunDevSettings.bulletSpeed) || 1),
+                lingerSeconds: Math.max(0, Number(gunDevSettings.tracerLingerMs) || 0) / 1000,
                 arrived: false,
-                remaining: CONFIG.tracer.impactLinger
+                remaining: 0
             });
         }
 
         function updateShotTracerVisual(tracer) {
-            const trailLength = Math.min(CONFIG.tracer.tailLength, tracer.travelled);
+            const trailLength = Math.min(gunDevSettings.tracerLength, tracer.travelled);
             const tailDistance = tracer.travelled - trailLength;
             const instanceStart = tracer.object.geometry.attributes.instanceStart;
             const instanceEnd = tracer.object.geometry.attributes.instanceEnd;
@@ -1245,7 +1245,7 @@
                     );
                     updateShotTracerVisual(tracer);
                     tracer.arrived = tracer.travelled >= tracer.maxDistance;
-                    if (tracer.arrived) tracer.remaining = CONFIG.tracer.impactLinger;
+                    if (tracer.arrived) tracer.remaining = tracer.lingerSeconds;
                     continue;
                 } else {
                     tracer.remaining -= dt;
