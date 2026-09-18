@@ -52,23 +52,9 @@ export function loadDevSettings() {
     const defaults = defaultDevSettings();
     const saved = JSON.parse(raw);
     const settings = Object.assign({}, defaults, saved);
-    let shouldPersistMigration = false;
 
-    // bulletSpeed used to control only the tracer animation despite its name.
-    // Keep the user's saved value while moving it to the explicit tracer key.
-    if (saved.tracerSpeed === undefined && saved.bulletSpeed !== undefined) {
-      settings.tracerSpeed = saved.bulletSpeed;
-      shouldPersistMigration = true;
-    }
-    if (settings.bulletSpeed !== undefined) {
-      delete settings.bulletSpeed;
-      shouldPersistMigration = true;
-    }
     if (saved.settingsVersion !== defaults.settingsVersion) {
       settings.settingsVersion = defaults.settingsVersion;
-      shouldPersistMigration = true;
-    }
-    if (shouldPersistMigration) {
       localStorage.setItem(STORAGE_KEY_DEV, JSON.stringify(settings, null, 2));
     }
     return settings;

@@ -268,7 +268,9 @@ function fireBullet() {
 
   bullets.push({
     mesh: bullet,
-    velocity: shotDirection.clone().multiplyScalar(devSettings.tracerSpeed),
+    velocity: shotDirection.clone().multiplyScalar(
+      Number(devSettings.tracerSpeed ?? devSettings.bulletSpeed) || 55
+    ),
     age: 0
   });
 

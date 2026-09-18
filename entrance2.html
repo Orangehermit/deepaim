@@ -138,11 +138,9 @@
                 triggerDebounceMs: 120
             },
             tracer: {
-                segments: 6,
-                lineWidth: 3,
-                maxTravelDistance: 100,
-                rearAlpha: 0.9,
-                frontAlpha: 0.9
+                lineWidth: 1.5,
+                lifetime: 0.075,
+                opacity: 0.7
             },
             muzzleFlash: {
                 duration: 0.045,
@@ -824,58 +822,41 @@
         const muzzleWorld = new THREE.Vector3();
         const aimWorld = new THREE.Vector3();
         const shotDirection = new THREE.Vector3();
-        const tracerPointCount = Math.max(2, Math.floor(CONFIG.tracer.segments) + 1);
-        const tracerMaterial = new LineMaterial({
-            color: 0xfff27a,
+        const shotTraceMaterial = new LineMaterial({
+            color: 0xf8f8f4,
             linewidth: CONFIG.tracer.lineWidth,
             vertexColors: false,
             transparent: true,
-            opacity: 1,
+            opacity: 0,
             blending: THREE.NormalBlending,
             depthWrite: false,
             toneMapped: false
         });
-        // r128's LineMaterial has RGB vertex colors but no per-vertex alpha.
-        // Add two instanced endpoint alpha attributes while retaining Line2.
-        tracerMaterial.onBeforeCompile = (shader) => {
-            shader.vertexShader = shader.vertexShader.replace(
-                'void main() {',
-                `attribute float instanceAlphaStart;
-attribute float instanceAlphaEnd;
-varying float vTracerAlpha;
+        const shotTraceGeometry = new LineGeometry();
+        shotTraceGeometry.setPositions([0, 0, 0, 0, 0, 0]);
+        shotTraceGeometry.attributes.instanceStart.data.setUsage(THREE.DynamicDrawUsage);
+        const shotTrace = new Line2(shotTraceGeometry, shotTraceMaterial);
+        shotTrace.name = 'SHOT_TRACE';
+        shotTrace.visible = false;
+        shotTrace.frustumCulled = false;
+        scene.add(shotTrace);
+        const shotTraceResolution = new THREE.Vector2();
+        const shotTraceEnd = new THREE.Vector3();
+        let shotTraceAge = 0;
 
-void main() {
-    vTracerAlpha = ( position.y < 0.5 ) ? instanceAlphaStart : instanceAlphaEnd;`
-            );
-            shader.fragmentShader = shader.fragmentShader
-                .replace(
-                    'void main() {',
-                    `varying float vTracerAlpha;
-
-void main() {`
-                )
-                .replace(
-                    'gl_FragColor = vec4( diffuseColor.rgb, alpha );',
-                    'gl_FragColor = vec4( diffuseColor.rgb, alpha * vTracerAlpha );'
-                );
-        };
-        tracerMaterial.customProgramCacheKey = () => 'deep-aim-tracer-alpha-v1';
-        const tracerResolution = new THREE.Vector2();
-        const activeTracers = [];
-
-        function updateTracerMaterialResolution() {
+        function updateShotTraceMaterialResolution() {
             if (renderer.xr.isPresenting) {
                 const xrCamera = renderer.xr.getCamera(camera);
                 const viewport = xrCamera.cameras?.[0]?.viewport;
                 if (viewport?.z > 0 && viewport?.w > 0) {
-                    tracerMaterial.resolution.set(viewport.z, viewport.w);
+                    shotTraceMaterial.resolution.set(viewport.z, viewport.w);
                     return;
                 }
             }
-            renderer.getDrawingBufferSize(tracerResolution);
-            tracerMaterial.resolution.copy(tracerResolution);
+            renderer.getDrawingBufferSize(shotTraceResolution);
+            shotTraceMaterial.resolution.copy(shotTraceResolution);
         }
-        updateTracerMaterialResolution();
+        updateShotTraceMaterialResolution();
 
         const laserGeometry = new THREE.BufferGeometry();
         laserGeometry.setAttribute(
@@ -1293,142 +1274,41 @@ void main() {`
             laserSight.visible = true;
         }
 
-        function createShotTracer(origin, shotDirectionVector, totalLength) {
-            if (!gunDevSettings.tracerEnabled) return;
-            if (totalLength < 0.0001) return;
-            const direction = shotDirectionVector.clone();
-            const positions = new Float32Array(tracerPointCount * 3);
-            const pointAlphas = new Float32Array(tracerPointCount);
-            for (let index = 0; index < tracerPointCount; index++) {
-                const progress = index / (tracerPointCount - 1);
-                pointAlphas[index] = THREE.MathUtils.lerp(
-                    CONFIG.tracer.rearAlpha,
-                    CONFIG.tracer.frontAlpha,
-                    THREE.MathUtils.smoothstep(progress, 0, 1)
-                );
+        function showShotTrace(origin, endPoint) {
+            if (!gunDevSettings.tracerEnabled) {
+                shotTrace.visible = false;
+                return;
             }
-            const segmentCount = tracerPointCount - 1;
-            const spatialAlphaStart = new Float32Array(segmentCount);
-            const spatialAlphaEnd = new Float32Array(segmentCount);
-            for (let index = 0; index < segmentCount; index++) {
-                spatialAlphaStart[index] = pointAlphas[index];
-                spatialAlphaEnd[index] = pointAlphas[index + 1];
-            }
-            const geometry = new LineGeometry();
-            geometry.setPositions(positions);
-            geometry.setAttribute(
-                'instanceAlphaStart',
-                new THREE.InstancedBufferAttribute(spatialAlphaStart.slice(), 1)
-            );
-            geometry.setAttribute(
-                'instanceAlphaEnd',
-                new THREE.InstancedBufferAttribute(spatialAlphaEnd.slice(), 1)
-            );
-            geometry.attributes.instanceStart.data.setUsage(THREE.DynamicDrawUsage);
-            geometry.attributes.instanceAlphaStart.setUsage(THREE.DynamicDrawUsage);
-            geometry.attributes.instanceAlphaEnd.setUsage(THREE.DynamicDrawUsage);
-            const tracer = new Line2(geometry, tracerMaterial);
-            tracer.name = 'SHOT_TRACER';
-            tracer.position.copy(origin);
-            tracer.visible = false;
-            tracer.frustumCulled = false;
-            scene.add(tracer);
-            updateTracerMaterialResolution();
-            activeTracers.push({
-                object: tracer,
-                direction,
-                spatialAlphaStart,
-                spatialAlphaEnd,
-                travelled: 0,
-                maxDistance: Math.min(totalLength, CONFIG.tracer.maxTravelDistance),
-                speed: Math.max(1, Number(gunDevSettings.tracerSpeed) || 1),
-                lingerSeconds: Math.max(0, Number(gunDevSettings.tracerLingerMs) || 0) / 1000,
-                arrived: false,
-                remaining: 0
-            });
-        }
 
-        function updateShotTracerVisual(tracer) {
-            const trailLength = Math.min(gunDevSettings.tracerLength, tracer.travelled);
-            const tailDistance = tracer.travelled - trailLength;
-            const instanceStart = tracer.object.geometry.attributes.instanceStart;
-            const instanceEnd = tracer.object.geometry.attributes.instanceEnd;
-            for (let index = 0; index < tracerPointCount - 1; index++) {
-                const startProgress = index / (tracerPointCount - 1);
-                const endProgress = (index + 1) / (tracerPointCount - 1);
-                const startDistance = tailDistance + trailLength * startProgress;
-                const endDistance = tailDistance + trailLength * endProgress;
-                instanceStart.setXYZ(
-                    index,
-                    tracer.direction.x * startDistance,
-                    tracer.direction.y * startDistance,
-                    tracer.direction.z * startDistance
-                );
-                instanceEnd.setXYZ(
-                    index,
-                    tracer.direction.x * endDistance,
-                    tracer.direction.y * endDistance,
-                    tracer.direction.z * endDistance
-                );
-            }
+            const instanceStart = shotTraceGeometry.attributes.instanceStart;
+            const instanceEnd = shotTraceGeometry.attributes.instanceEnd;
+            instanceStart.setXYZ(0, origin.x, origin.y, origin.z);
+            instanceEnd.setXYZ(0, endPoint.x, endPoint.y, endPoint.z);
             instanceStart.data.needsUpdate = true;
-            tracer.object.visible = trailLength >= 0.0001;
+
+            shotTraceAge = 0;
+            shotTraceMaterial.opacity = CONFIG.tracer.opacity;
+            shotTrace.visible = true;
+            updateShotTraceMaterialResolution();
         }
 
-        function updateShotTracerOpacity(tracer, temporalOpacity) {
-            const startAttribute = tracer.object.geometry.attributes.instanceAlphaStart;
-            const endAttribute = tracer.object.geometry.attributes.instanceAlphaEnd;
-            for (let index = 0; index < tracer.spatialAlphaStart.length; index++) {
-                startAttribute.setX(
-                    index,
-                    tracer.spatialAlphaStart[index] * temporalOpacity
-                );
-                endAttribute.setX(
-                    index,
-                    tracer.spatialAlphaEnd[index] * temporalOpacity
-                );
+        function updateShotTrace(dt) {
+            if (!shotTrace.visible) return;
+            if (!gunDevSettings.tracerEnabled) {
+                shotTrace.visible = false;
+                shotTraceMaterial.opacity = 0;
+                return;
             }
-            startAttribute.needsUpdate = true;
-            endAttribute.needsUpdate = true;
-        }
 
-        function removeShotTracer(index) {
-            const tracer = activeTracers[index];
-            scene.remove(tracer.object);
-            tracer.object.geometry.dispose();
-            activeTracers.splice(index, 1);
-        }
+            shotTraceAge = Math.min(CONFIG.tracer.lifetime, shotTraceAge + dt);
+            const lifeProgress = shotTraceAge / CONFIG.tracer.lifetime;
+            shotTraceMaterial.opacity = CONFIG.tracer.opacity *
+                (1 - THREE.MathUtils.smoothstep(lifeProgress, 0, 1));
+            updateShotTraceMaterialResolution();
 
-        function updateShotTracers(dt) {
-            if (activeTracers.length > 0) updateTracerMaterialResolution();
-            for (let index = activeTracers.length - 1; index >= 0; index--) {
-                const tracer = activeTracers[index];
-                if (!tracer.arrived) {
-                    tracer.travelled = Math.min(
-                        tracer.maxDistance,
-                        tracer.travelled + tracer.speed * dt
-                    );
-                    updateShotTracerVisual(tracer);
-                    tracer.arrived = tracer.travelled >= tracer.maxDistance;
-                    if (!tracer.arrived) continue;
-
-                    tracer.remaining = tracer.lingerSeconds;
-                    if (tracer.remaining > 0) continue;
-                    removeShotTracer(index);
-                    continue;
-                }
-
-                tracer.remaining = Math.max(0, tracer.remaining - dt);
-                if (tracer.remaining > 0) {
-                    const temporalOpacity = THREE.MathUtils.smoothstep(
-                        tracer.remaining / tracer.lingerSeconds,
-                        0,
-                        1
-                    );
-                    updateShotTracerOpacity(tracer, temporalOpacity);
-                    continue;
-                }
-                removeShotTracer(index);
+            if (shotTraceAge >= CONFIG.tracer.lifetime) {
+                shotTrace.visible = false;
+                shotTraceMaterial.opacity = 0;
             }
         }
 
@@ -1574,8 +1454,15 @@ void main() {`
             showMuzzleFlash();
 
             const hit = findTargetHit(shotPose.origin, shotPose.direction);
-            const tracerDistance = hit ? hit.distance : CONFIG.gun.rayDistance;
-            createShotTracer(shotPose.origin, shotPose.direction, tracerDistance);
+            if (hit) {
+                shotTraceEnd.copy(hit.point);
+            } else {
+                shotTraceEnd.copy(shotPose.origin).addScaledVector(
+                    shotPose.direction,
+                    CONFIG.gun.rayDistance
+                );
+            }
+            showShotTrace(shotPose.origin, shotTraceEnd);
             if (!hit) return;
 
             console.log(`Hit: ${hit.object.userData.hitZone}`);
@@ -1770,7 +1657,7 @@ void main() {`
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
-            updateTracerMaterialResolution();
+            updateShotTraceMaterialResolution();
         }
 
         const clock = new THREE.Clock();
@@ -1836,7 +1723,7 @@ void main() {`
             settingsPanel.pollMenuButton();
             updateButtonInteraction(dt);
             updateTargetSequence(dt);
-            updateShotTracers(dt);
+            updateShotTrace(dt);
             updateMuzzleFlash(dt);
             updateLaserSight();
             updateSettingsPointer();

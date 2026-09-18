@@ -1,13 +1,10 @@
 export function defaultDevSettings() {
   return {
     settingsVersion: 4,
-    tracerSpeed: 55,
     gunScale: 1.0,
     turnSpeed: 90,
     laserSightEnabled: false,
     tracerEnabled: true,
-    tracerLength: 10,
-    tracerLingerMs: 150,
   };
 }
 
