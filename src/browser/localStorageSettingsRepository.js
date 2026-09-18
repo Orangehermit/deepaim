@@ -52,14 +52,23 @@ export function loadDevSettings() {
     const defaults = defaultDevSettings();
     const saved = JSON.parse(raw);
     const settings = Object.assign({}, defaults, saved);
+    let shouldPersistMigration = false;
 
-    // Version 1 used 25 m/s as the default. Migrate only that legacy default;
-    // explicitly customized speeds are kept as-is.
-    if (!saved.settingsVersion && saved.bulletSpeed === 25) {
-      settings.bulletSpeed = defaults.bulletSpeed;
+    // bulletSpeed used to control only the tracer animation despite its name.
+    // Keep the user's saved value while moving it to the explicit tracer key.
+    if (saved.tracerSpeed === undefined && saved.bulletSpeed !== undefined) {
+      settings.tracerSpeed = saved.bulletSpeed;
+      shouldPersistMigration = true;
+    }
+    if (settings.bulletSpeed !== undefined) {
+      delete settings.bulletSpeed;
+      shouldPersistMigration = true;
     }
     if (saved.settingsVersion !== defaults.settingsVersion) {
       settings.settingsVersion = defaults.settingsVersion;
+      shouldPersistMigration = true;
+    }
+    if (shouldPersistMigration) {
       localStorage.setItem(STORAGE_KEY_DEV, JSON.stringify(settings, null, 2));
     }
     return settings;
