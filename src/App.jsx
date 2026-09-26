@@ -33,9 +33,3 @@ function App() {
 }
 
 export default App;
-
-<Canvas
-  shadows
-  camera={{ position: [3, 3, 3], fov: 30 }}
-  gl={{ localClippingEnabled: true }}
-></Canvas>
