@@ -2,7 +2,9 @@ import { Canvas } from "@react-three/fiber";
 import { createXRStore, XR, XROrigin } from "@react-three/xr";
 import { Scene } from "./components/Scene";
 
-const xrStore = createXRStore();
+const xrStore = createXRStore({
+  controller: { rayPointer: true },
+});
 
 function App() {
   return (
@@ -20,7 +22,7 @@ function App() {
         Enter VR
       </button>
 
-      <Canvas shadows camera={{ position: [3, 3, 3], fov: 30 }} gl={{ localClippingEnabled: true }}>
+      <Canvas shadows camera={{ position: [0, 1.6, 0], fov: 50 }} gl={{ localClippingEnabled: true }}>
         <color attach="background" args={["#ececec"]} />
 
         <XR store={xrStore}>
@@ -33,9 +35,3 @@ function App() {
 }
 
 export default App;
-
-<Canvas
-  shadows
-  camera={{ position: [3, 3, 3], fov: 30 }}
-  gl={{ localClippingEnabled: true }}
-></Canvas>
