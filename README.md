@@ -1,10 +1,94 @@
-# r3f-vite-starter
-A boilerplate to build R3F projects
+# Deep Aim
 
+Deep Aim is a WebXR shooting project built with React Three Fiber.
+
+## Development
+
+This project uses **npm**, not Yarn.
+
+Install dependencies:
+
+```bash
+npm install
 ```
-yarn
-yarn dev
+
+Start the Vite development server:
+
+```bash
+npm run dev
 ```
 
+Build for production:
 
-![image](https://user-images.githubusercontent.com/6551176/221732091-23ee52cb-4150-42fa-b998-43628d7a6b0d.png)
+```bash
+npm run build
+```
+
+Preview the production build locally:
+
+```bash
+npm run preview
+```
+
+## React version note
+
+`react` and `react-dom` must use the same version.
+
+Check the installed versions with:
+
+```bash
+npm ls react react-dom
+```
+
+If the dependency state becomes inconsistent, stop the development server, delete:
+
+```text
+node_modules
+package-lock.json
+```
+
+and reinstall:
+
+```bash
+npm install
+```
+
+## GitHub Pages
+
+The project is deployed with **GitHub Actions** rather than directly serving the repository root.
+
+GitHub Pages:
+
+https://orangehermit.github.io/deepaim/
+
+The Vite configuration must use:
+
+```js
+base: "/deepaim/"
+```
+
+Deployment workflow:
+
+```text
+.github/workflows/deploy.yml
+```
+
+A push to `main` triggers a production build and deploys the generated `dist` directory to GitHub Pages.
+
+## Current development sequence
+
+```text
+R3F base
+↓
+GitHub Pages deployment
+↓
+WebXR
+↓
+XR controllers
+↓
+UI Kit
+↓
+Reusable XR starter
+↓
+Deep Aim shooting systems
+```
