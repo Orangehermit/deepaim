@@ -1,9 +1,13 @@
 import { Canvas } from "@react-three/fiber";
 import { createXRStore, XR, XROrigin } from "@react-three/xr";
 import { Scene } from "./components/Scene";
+import { RightHandGun } from "./xr/RightHandGun";
 
 const xrStore = createXRStore({
-  controller: { rayPointer: true },
+  controller: {
+    right: RightHandGun,
+    left: { rayPointer: true },
+  },
 });
 
 function App() {
