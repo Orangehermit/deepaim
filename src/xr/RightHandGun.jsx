@@ -1,47 +1,64 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { createPortal, useThree } from "@react-three/fiber";
+import { useGLTF } from "@react-three/drei";
 import {
   DefaultXRController,
   XRSpace,
   useXRInputSourceEvent,
   useXRInputSourceStateContext,
 } from "@react-three/xr";
-import { Raycaster } from "three";
+import { MathUtils, Raycaster } from "three";
 import { shoot } from "../shooting/shoot";
 import { DebugShotRay } from "../shooting/DebugShotRay";
+
+const MODEL_URL = `${import.meta.env.BASE_URL}assets/models/weapons/desert_eagle.glb`;
+// Fixed grip-coordinate correction for the observed ~90° upward barrel tilt.
+// User-adjustable weapon calibration will be a separate child transform.
+const XR_GRIP_CORRECTION = [-Math.PI / 2, 0, 0];
+// Developer-defined neutral handgun stance; user calibration stays zero-centered.
+const DEFAULT_WEAPON_POSE_DEG = { pitch: 25, yaw: 0, roll: 0 };
+const DEFAULT_WEAPON_ROTATION = [
+  MathUtils.degToRad(DEFAULT_WEAPON_POSE_DEG.pitch),
+  MathUtils.degToRad(DEFAULT_WEAPON_POSE_DEG.yaw),
+  MathUtils.degToRad(DEFAULT_WEAPON_POSE_DEG.roll),
+];
 
 // Mounted only for the right controller by the XR store. Shooting stays neutral.
 export function RightHandGun() {
   const controller = useXRInputSourceStateContext("controller");
   const scene = useThree((state) => state.scene);
   const grip = useRef(null);
-  const muzzle = useRef(null);
+  const { scene: gltfScene } = useGLTF(MODEL_URL);
+  const weapon = useMemo(() => {
+    const sourceRoot = gltfScene.getObjectByName("Gun_Root");
+    if (sourceRoot == null) throw new Error("Desert Eagle GLB is missing Gun_Root");
+    const instance = sourceRoot.clone(true);
+    for (const name of ["Muzzle_Point", "Aim_Point", "Rear_Point"]) {
+      if (instance.getObjectByName(name) == null) {
+        throw new Error(`Desert Eagle GLB is missing ${name}`);
+      }
+    }
+    return instance;
+  }, [gltfScene]);
+  const muzzle = weapon.getObjectByName("Muzzle_Point");
+  const aim = weapon.getObjectByName("Aim_Point");
   const [raycaster] = useState(() => new Raycaster());
   const [shot, setShot] = useState(null);
 
   useXRInputSourceEvent(controller.inputSource, "select", () => {
-    if (muzzle.current == null || !grip.current?.visible) return;
-    setShot(shoot(muzzle.current, scene, raycaster));
-  }, [scene, raycaster]);
+    if (!grip.current?.visible) return;
+    setShot(shoot(muzzle, aim, scene, raycaster));
+  }, [muzzle, aim, scene, raycaster]);
 
   return (
     <>
       <DefaultXRController rayPointer={{ rayModel: false }} />
       <XRSpace space="grip-space" ref={grip}>
-        <group name="GunRoot" pointerEvents="none">
-          <mesh name="TemporaryGunMesh" position={[0, 0.035, -0.12]}>
-            <boxGeometry args={[0.045, 0.055, 0.24]} />
-            <meshBasicMaterial color="#334155" />
-          </mesh>
-          <mesh position={[0, -0.035, -0.025]} rotation={[0.2, 0, 0]}>
-            <boxGeometry args={[0.04, 0.1, 0.055]} />
-            <meshBasicMaterial color="#64748b" />
-          </mesh>
-          <group name="MuzzlePoint" ref={muzzle} position={[0, 0.035, -0.24]}>
-            <mesh>
-              <sphereGeometry args={[0.008, 12, 8]} />
-              <meshBasicMaterial color="#f59e0b" />
-            </mesh>
+        <group name="XRGripCorrection" rotation={XR_GRIP_CORRECTION} pointerEvents="none">
+          <group name="DefaultWeaponPose" rotation={DEFAULT_WEAPON_ROTATION}>
+            <group name="WeaponCalibration">
+              <primitive object={weapon} />
+            </group>
           </group>
         </group>
       </XRSpace>
