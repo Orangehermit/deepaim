@@ -34,10 +34,12 @@ npm run preview
 
 In VR, `public/assets/models/weapons/desert_eagle.glb` is attached to the right
 controller's grip space through a fixed `XRGripCorrection` rotation of -90°
-around X. This addresses the reported upward barrel tilt; its sign and angle
-still need Quest 3 verification. The separate identity `WeaponCalibration`
-wrapper is reserved for later user adjustment. Neither wrapper changes the
-GLB's internal transforms or scale.
+around X. A separate `DefaultWeaponPose` layer adds a developer-defined
+pitch of +25° (yaw and roll 0°) as the neutral handgun stance. The identity
+`WeaponCalibration` wrapper remains zero-centered for later user adjustment.
+The transform order is grip-space → `XRGripCorrection` → `DefaultWeaponPose` →
+`WeaponCalibration` → `Gun_Root`. These wrappers do not change the GLB's
+internal transforms or scale.
 The model's `Gun_Root`, `Muzzle_Point`, and `Aim_Point` are used directly.
 `Rear_Point` is retained for a future weapon collider and does not affect firing.
 Each right-controller `select` event fires one instantaneous raycast from the
@@ -59,7 +61,7 @@ that controller input in this minimal prototype.
 The existing Zustand cube and ON/OFF control are preserved at x = 0.6 m,
 leaving the central shooting lane clear. Weapon poses and hit feedback use
 Three.js objects/refs and local state, without new Zustand fields. The fixed
-grip correction is not stored in Zustand.
+grip correction and default weapon pose are not stored in Zustand.
 
 Implementation:
 
@@ -76,9 +78,12 @@ Run the Three.js shooting checks with:
 node --test src/shooting/shoot.test.js src/xr/desertEagle.test.js
 ```
 
-Quest 3 check: enter VR, hold the right controller pointing horizontally
-forward, and confirm the Desert Eagle barrel no longer points upward. Move and
-rotate the controller to check that the weapon follows at a believable scale.
+Quest 3 check: enter VR and hold the right controller in a natural handgun
+stance without bending the wrist to aim at the target. Check whether the
+Desert Eagle barrel is approximately horizontal. To tune this neutral stance,
+change only `DEFAULT_WEAPON_POSE_DEG.pitch` in `RightHandGun.jsx` (try +20°, +25°,
+or +30°); leave the fixed XR grip correction and GLB transforms untouched.
+Move and rotate the controller to check that the weapon follows at a believable scale.
 Aim at the blue target and press/release the right trigger. Confirm one brief
 line per trigger action, that it starts at `Muzzle_Point` and follows the line
 toward `Aim_Point`, and that the target turns red on a hit. Check a miss, the

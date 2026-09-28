@@ -7,7 +7,7 @@ import {
   useXRInputSourceEvent,
   useXRInputSourceStateContext,
 } from "@react-three/xr";
-import { Raycaster } from "three";
+import { MathUtils, Raycaster } from "three";
 import { shoot } from "../shooting/shoot";
 import { DebugShotRay } from "../shooting/DebugShotRay";
 
@@ -15,6 +15,13 @@ const MODEL_URL = `${import.meta.env.BASE_URL}assets/models/weapons/desert_eagle
 // Fixed grip-coordinate correction for the observed ~90° upward barrel tilt.
 // User-adjustable weapon calibration will be a separate child transform.
 const XR_GRIP_CORRECTION = [-Math.PI / 2, 0, 0];
+// Developer-defined neutral handgun stance; user calibration stays zero-centered.
+const DEFAULT_WEAPON_POSE_DEG = { pitch: 25, yaw: 0, roll: 0 };
+const DEFAULT_WEAPON_ROTATION = [
+  MathUtils.degToRad(DEFAULT_WEAPON_POSE_DEG.pitch),
+  MathUtils.degToRad(DEFAULT_WEAPON_POSE_DEG.yaw),
+  MathUtils.degToRad(DEFAULT_WEAPON_POSE_DEG.roll),
+];
 
 // Mounted only for the right controller by the XR store. Shooting stays neutral.
 export function RightHandGun() {
@@ -48,8 +55,10 @@ export function RightHandGun() {
       <DefaultXRController rayPointer={{ rayModel: false }} />
       <XRSpace space="grip-space" ref={grip}>
         <group name="XRGripCorrection" rotation={XR_GRIP_CORRECTION} pointerEvents="none">
-          <group name="WeaponCalibration">
-            <primitive object={weapon} />
+          <group name="DefaultWeaponPose" rotation={DEFAULT_WEAPON_ROTATION}>
+            <group name="WeaponCalibration">
+              <primitive object={weapon} />
+            </group>
           </group>
         </group>
       </XRSpace>
