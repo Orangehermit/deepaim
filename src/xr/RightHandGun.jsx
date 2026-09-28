@@ -10,6 +10,7 @@ import {
 import { MathUtils, Raycaster } from "three";
 import { shoot } from "../shooting/shoot";
 import { DebugShotRay } from "../shooting/DebugShotRay";
+import { XRPoseDiagnostics } from "./XRPoseDiagnostics";
 
 const MODEL_URL = `${import.meta.env.BASE_URL}assets/models/weapons/desert_eagle.glb`;
 // Fixed grip-coordinate correction for the observed ~90° upward barrel tilt.
@@ -62,6 +63,7 @@ export function RightHandGun() {
           </group>
         </group>
       </XRSpace>
+      <XRPoseDiagnostics defaultWeaponPosePitchDeg={DEFAULT_WEAPON_POSE_DEG.pitch} />
       {createPortal(<DebugShotRay shot={shot} />, scene)}
     </>
   );
