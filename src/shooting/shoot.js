@@ -1,6 +1,6 @@
 import { Quaternion, Raycaster, Vector3 } from "three";
 
-// The barrel and MuzzlePoint point along local -Z. Change weapon alignment here.
+// Desert Eagle's Muzzle_Point and Aim_Point align along local -Z.
 export const LOCAL_FORWARD = new Vector3(0, 0, -1);
 export const SHOT_RANGE = 10;
 

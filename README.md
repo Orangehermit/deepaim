@@ -32,8 +32,10 @@ npm run preview
 
 ## Minimal XR shooting loop
 
-In VR, a temporary box gun is attached to the right controller's grip space.
-The orange marker is its `MuzzlePoint`; local -Z points out of the barrel.
+In VR, `public/assets/models/weapons/desert_eagle.glb` is attached to the right
+controller's grip space without changing its internal transforms or scale.
+The model's `Gun_Root` and `Muzzle_Point` are used directly. `Rear_Point` and
+`Aim_Point` confirm that local -Z points out of the barrel.
 Each right-controller `select` event fires one instantaneous raycast from the
 muzzle's world position and orientation. Holding the trigger does not repeat fire.
 
@@ -54,7 +56,7 @@ Three.js objects/refs and local state, without new Zustand fields.
 
 Implementation:
 
-- `src/xr/RightHandGun.jsx`: right-controller attachment and select input.
+- `src/xr/RightHandGun.jsx`: GLB loading, right-controller attachment, and select input.
 - `src/shooting/shoot.js`: hand-independent muzzle raycast; only visible objects
   with `userData.onShotHit` are eligible targets. Other scene meshes do not block
   shots in this prototype.
@@ -64,14 +66,16 @@ Implementation:
 Run the Three.js shooting checks with:
 
 ```bash
-node --test src/shooting/shoot.test.js
+node --test src/shooting/shoot.test.js src/xr/desertEagle.test.js
 ```
 
-Quest 3 check: enter VR, move/rotate the right controller, confirm the gun and
-orange muzzle follow it, then aim at the blue target and press/release the right
-trigger. Confirm one brief line per trigger action, barrel/line alignment, and
-a red target on a hit. Check a miss, the left trigger (no shot), and the ON/OFF
-control as well. Real-device alignment and input must be checked on the headset.
+Quest 3 check: enter VR, move/rotate the right controller, confirm the Desert
+Eagle follows it at a believable scale, then aim at the blue target and
+press/release the right trigger. Confirm one brief line per trigger action,
+that it starts at the barrel opening and follows the barrel axis, and that
+the target turns red on a hit. Check a miss, the left trigger (no shot), and
+the ON/OFF control as well. Fine grip-angle calibration is a later task;
+real-device alignment and input must be checked on the headset.
 
 ## React version note
 
