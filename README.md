@@ -33,11 +33,17 @@ npm run preview
 ## Minimal XR shooting loop
 
 In VR, `public/assets/models/weapons/desert_eagle.glb` is attached to the right
-controller's grip space without changing its internal transforms or scale.
-The model's `Gun_Root` and `Muzzle_Point` are used directly. `Rear_Point` and
-`Aim_Point` confirm that local -Z points out of the barrel.
+controller's grip space through a fixed `XRGripCorrection` rotation of -90°
+around X. This addresses the reported upward barrel tilt; its sign and angle
+still need Quest 3 verification. The separate identity `WeaponCalibration`
+wrapper is reserved for later user adjustment. Neither wrapper changes the
+GLB's internal transforms or scale.
+The model's `Gun_Root`, `Muzzle_Point`, and `Aim_Point` are used directly.
+`Rear_Point` is retained for a future weapon collider and does not affect firing.
 Each right-controller `select` event fires one instantaneous raycast from the
-muzzle's world position and orientation. Holding the trigger does not repeat fire.
+muzzle's world position toward `Aim_Point`'s world position. Holding the trigger
+does not repeat fire. The muzzle's rotation and the XR controller's targeting
+ray do not define the shot direction.
 
 A blue target, 40 cm in diameter, sits at `[0, 1.5, -3]`. A hit turns it red;
 it stays visible and red until the page reloads. An orange debug line shows the
@@ -52,7 +58,8 @@ that controller input in this minimal prototype.
 
 The existing Zustand cube and ON/OFF control are preserved at x = 0.6 m,
 leaving the central shooting lane clear. Weapon poses and hit feedback use
-Three.js objects/refs and local state, without new Zustand fields.
+Three.js objects/refs and local state, without new Zustand fields. The fixed
+grip correction is not stored in Zustand.
 
 Implementation:
 
@@ -69,13 +76,14 @@ Run the Three.js shooting checks with:
 node --test src/shooting/shoot.test.js src/xr/desertEagle.test.js
 ```
 
-Quest 3 check: enter VR, move/rotate the right controller, confirm the Desert
-Eagle follows it at a believable scale, then aim at the blue target and
-press/release the right trigger. Confirm one brief line per trigger action,
-that it starts at the barrel opening and follows the barrel axis, and that
-the target turns red on a hit. Check a miss, the left trigger (no shot), and
-the ON/OFF control as well. Fine grip-angle calibration is a later task;
-real-device alignment and input must be checked on the headset.
+Quest 3 check: enter VR, hold the right controller pointing horizontally
+forward, and confirm the Desert Eagle barrel no longer points upward. Move and
+rotate the controller to check that the weapon follows at a believable scale.
+Aim at the blue target and press/release the right trigger. Confirm one brief
+line per trigger action, that it starts at `Muzzle_Point` and follows the line
+toward `Aim_Point`, and that the target turns red on a hit. Check a miss, the
+left trigger (no shot), and the ON/OFF control as well. Fine grip-angle
+calibration is a later task; real-device alignment remains to be checked.
 
 ## React version note
 

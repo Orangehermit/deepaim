@@ -1,16 +1,18 @@
-import { Quaternion, Raycaster, Vector3 } from "three";
+import { Raycaster, Vector3 } from "three";
 
-// Desert Eagle's Muzzle_Point and Aim_Point align along local -Z.
-export const LOCAL_FORWARD = new Vector3(0, 0, -1);
 export const SHOT_RANGE = 10;
 
 // Only objects exposing onShotHit participate; UI/controller/debug meshes do not.
 // A caller can reuse its own Raycaster without sharing weapon state globally.
-export function shoot(muzzle, scene, raycaster = new Raycaster()) {
+export function shoot(muzzle, aim, scene, raycaster = new Raycaster()) {
   muzzle.updateWorldMatrix(true, false);
+  aim.updateWorldMatrix(true, false);
   const origin = muzzle.getWorldPosition(new Vector3());
-  const orientation = muzzle.getWorldQuaternion(new Quaternion());
-  const direction = LOCAL_FORWARD.clone().applyQuaternion(orientation).normalize();
+  const direction = aim.getWorldPosition(new Vector3()).sub(origin);
+  if (direction.lengthSq() === 0) {
+    throw new Error("Muzzle_Point and Aim_Point must not overlap");
+  }
+  direction.normalize();
 
   const targets = [];
   scene.updateMatrixWorld(true);
