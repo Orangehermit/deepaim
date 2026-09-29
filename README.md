@@ -30,7 +30,7 @@ Preview the production build locally:
 npm run preview
 ```
 
-## Minimal XR shooting loop
+## Shooting loop V1
 
 In VR, `public/assets/models/weapons/desert_eagle.glb` is attached to the right
 controller's grip space through a fixed `XRGripCorrection` rotation of -90°
@@ -42,21 +42,27 @@ The transform order is grip-space → `XRGripCorrection` → `DefaultWeaponPose`
 internal transforms or scale.
 The model's `Gun_Root`, `Muzzle_Point`, and `Aim_Point` are used directly.
 `Rear_Point` is retained for a future weapon collider and does not affect firing.
-Each right-controller `select` event fires one instantaneous raycast from the
-muzzle's world position toward `Aim_Point`'s world position. Holding the trigger
-does not repeat fire. The muzzle's rotation and the XR controller's targeting
-ray do not define the shot direction.
+The right controller's analog select trigger fires once when its value reaches
+0.85. It must drop below 0.70 before the next shot can fire. Controllers without
+an analog value use `selectstart` / `selectend` as a digital fallback. A single
+`fireWeapon()` call raycasts from the muzzle's world position toward `Aim_Point`'s
+world position, starts a moving white tracer and muzzle flash at the muzzle,
+restarts the gunshot audio, and requests a short controller haptic pulse.
+Holding or releasing the trigger does not fire additional shots. The muzzle's
+rotation and the XR controller's targeting ray do not define the shot direction.
 
 A blue target, 40 cm in diameter, sits at `[0, 1.5, -3]`. A hit turns it red;
-it stays visible and red until the page reloads. An orange debug line shows the
-resolved shot for 150 ms, extending 10 m from the muzzle. It stays at the fired
-world coordinates rather than following subsequent controller movement.
+it stays visible and red until the page reloads. The tracer travels toward the
+hit or maximum range in about 60 ms. The flash lasts about 45 ms. Both effects
+use the firing-time muzzle position and direction, so moving the controller
+afterward does not move them. The old orange `DebugShotRay` remains in the
+repository for troubleshooting but is not rendered during normal firing.
 
-The right controller keeps its UI cursor, but its continuous pointer line is
-hidden so it cannot be mistaken for the muzzle-based shot line. The left
-controller keeps the original UI pointer and does not fire. Using the right
-trigger on the ON/OFF control also fires a shot; UI and shooting both listen to
-that controller input in this minimal prototype.
+The right controller model is hidden while its UI cursor remains available; its
+continuous pointer line is hidden. The left controller keeps the original UI
+pointer and does not fire. Using the right trigger on the ON/OFF control also
+fires a shot. A hemisphere light and directional light reveal the gun's dark
+materials without changing the GLB.
 
 The existing Zustand cube and ON/OFF control are preserved at x = 0.6 m,
 leaving the central shooting lane clear. Weapon poses and hit feedback use
@@ -65,17 +71,21 @@ grip correction and default weapon pose are not stored in Zustand.
 
 Implementation:
 
-- `src/xr/RightHandGun.jsx`: GLB loading, right-controller attachment, and select input.
+- `src/xr/RightHandGun.jsx`: GLB loading, right-controller attachment, trigger
+  sampling, and the one-shot `fireWeapon()` event.
 - `src/shooting/shoot.js`: hand-independent muzzle raycast; only visible objects
   with `userData.onShotHit` are eligible targets. Other scene meshes do not block
   shots in this prototype.
 - `src/shooting/Target.jsx`: local blue-to-red hit response.
-- `src/shooting/DebugShotRay.jsx`: temporary shot visualization.
+- `src/shooting/ShotEffects.jsx`: short moving tracer and muzzle flash.
+- `src/shooting/trigger.js`: threshold crossing and hysteresis.
+- `src/shooting/shootingConfig.js`: values to tune during Quest tests.
+- `src/shooting/haptics.js`: optional controller pulse.
 
 Run the Three.js shooting checks with:
 
 ```bash
-node --test src/shooting/shoot.test.js src/xr/desertEagle.test.js
+node --test src/shooting/shoot.test.js src/shooting/trigger.test.js src/shooting/haptics.test.js src/xr/desertEagle.test.js
 ```
 
 Quest 3 check: enter VR and hold the right controller in a natural handgun
@@ -84,11 +94,13 @@ Desert Eagle barrel is approximately horizontal. To tune this neutral stance,
 change only `DEFAULT_WEAPON_POSE_DEG.pitch` in `RightHandGun.jsx` (try +20°, +25°,
 or +30°); leave the fixed XR grip correction and GLB transforms untouched.
 Move and rotate the controller to check that the weapon follows at a believable scale.
-Aim at the blue target and press/release the right trigger. Confirm one brief
-line per trigger action, that it starts at `Muzzle_Point` and follows the line
-toward `Aim_Point`, and that the target turns red on a hit. Check a miss, the
-left trigger (no shot), and the ON/OFF control as well. Fine grip-angle
-calibration is a later task; real-device alignment remains to be checked.
+Aim at the blue target and slowly pull the right trigger. Confirm one shot only
+when the trigger reaches the fire threshold: white tracer, brief muzzle flash,
+gunshot sound, haptic pulse, and red target on a hit. Holding the trigger should
+not repeat; dropping below the reset threshold and pulling again should fire.
+Check a miss, missing haptics, the left trigger (no shot), and the ON/OFF
+control as well. Fine grip-angle calibration is a later task; real-device
+alignment remains to be checked.
 
 ## React version note
 

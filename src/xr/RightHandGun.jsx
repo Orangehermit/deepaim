@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from "react";
-import { createPortal, useThree } from "@react-three/fiber";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal, useFrame, useThree } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
 import {
   DefaultXRController,
@@ -9,9 +9,12 @@ import {
 } from "@react-three/xr";
 import { MathUtils, Raycaster } from "three";
 import { shoot } from "../shooting/shoot";
-import { DebugShotRay } from "../shooting/DebugShotRay";
+import { ShotEffects } from "../shooting/ShotEffects";
+import { pulseController } from "../shooting/haptics";
+import { createTriggerGate } from "../shooting/trigger";
 
 const MODEL_URL = `${import.meta.env.BASE_URL}assets/models/weapons/desert_eagle.glb`;
+const GUNSHOT_URL = `${import.meta.env.BASE_URL}assets/audio/gunshot_pistol.wav`;
 // Fixed grip-coordinate correction for the observed ~90° upward barrel tilt.
 // User-adjustable weapon calibration will be a separate child transform.
 const XR_GRIP_CORRECTION = [-Math.PI / 2, 0, 0];
@@ -44,15 +47,56 @@ export function RightHandGun() {
   const aim = weapon.getObjectByName("Aim_Point");
   const [raycaster] = useState(() => new Raycaster());
   const [shot, setShot] = useState(null);
+  const triggerGate = useMemo(() => createTriggerGate(), []);
+  const digitalPressed = useRef(false);
+  const audio = useRef(null);
+  const shotId = useRef(0);
 
-  useXRInputSourceEvent(controller.inputSource, "select", () => {
+  useEffect(() => {
+    const sound = new Audio(GUNSHOT_URL);
+    sound.preload = "auto";
+    sound.load();
+    audio.current = sound;
+    return () => {
+      sound.pause();
+      audio.current = null;
+    };
+  }, []);
+
+  const fireWeapon = useCallback(() => {
     if (!grip.current?.visible) return;
-    setShot(shoot(muzzle, aim, scene, raycaster));
-  }, [muzzle, aim, scene, raycaster]);
+    const firedShot = shoot(muzzle, aim, scene, raycaster);
+    setShot({ ...firedShot, id: ++shotId.current });
+    if (audio.current != null) {
+      try {
+        audio.current.pause();
+        audio.current.currentTime = 0;
+        void Promise.resolve(audio.current.play())
+          .catch((error) => console.warn("Gunshot audio could not play", error));
+      } catch (error) {
+        console.warn("Gunshot audio could not play", error);
+      }
+    }
+    pulseController(controller.inputSource);
+  }, [muzzle, aim, scene, raycaster, controller.inputSource]);
+
+  // Use select events only when a controller does not expose an analog trigger.
+  useXRInputSourceEvent(controller.inputSource, "selectstart", () => {
+    digitalPressed.current = true;
+  }, []);
+  useXRInputSourceEvent(controller.inputSource, "selectend", () => {
+    digitalPressed.current = false;
+  }, []);
+
+  useFrame(() => {
+    const analog = controller.gamepad?.[controller.layout?.selectComponentId]?.button;
+    const value = Number.isFinite(analog) ? analog : Number(digitalPressed.current);
+    if (triggerGate.updateTriggerState(value)) fireWeapon();
+  });
 
   return (
     <>
-      <DefaultXRController rayPointer={{ rayModel: false }} />
+      <DefaultXRController model={false} grabPointer={false} rayPointer={{ rayModel: false }} />
       <XRSpace space="grip-space" ref={grip}>
         <group name="XRGripCorrection" rotation={XR_GRIP_CORRECTION} pointerEvents="none">
           <group name="DefaultWeaponPose" rotation={DEFAULT_WEAPON_ROTATION}>
@@ -62,7 +106,7 @@ export function RightHandGun() {
           </group>
         </group>
       </XRSpace>
-      {createPortal(<DebugShotRay shot={shot} />, scene)}
+      {createPortal(<ShotEffects shot={shot} />, scene)}
     </>
   );
 }
