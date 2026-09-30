@@ -26,6 +26,14 @@ const DEFAULT_WEAPON_ROTATION = [
   MathUtils.degToRad(DEFAULT_WEAPON_POSE_DEG.roll),
 ];
 
+// TEMP: Quest 3 trigger-event measurement. Remove after input experiment.
+const readAnalogTrigger = (controller) =>
+  controller.gamepad?.[controller.layout?.selectComponentId]?.button;
+const logTriggerDebug = (event, value) => {
+  const measuredValue = Number.isFinite(value) ? value.toFixed(3) : "unavailable";
+  console.log(`[TriggerDebug] ${performance.now().toFixed(1)} ${event} value=${measuredValue}`);
+};
+
 // Mounted only for the right controller by the XR store. Shooting stays neutral.
 export function RightHandGun() {
   const controller = useXRInputSourceStateContext("controller");
@@ -51,9 +59,10 @@ export function RightHandGun() {
   const digitalPressed = useRef(false);
   const shotId = useRef(0);
 
-  const fireWeapon = useCallback(() => {
+  const fireWeapon = useCallback((analog) => {
     if (!grip.current?.visible) return;
     const firedShot = shoot(muzzle, aim, scene, raycaster);
+    logTriggerDebug("fire", analog);
     setShot({ ...firedShot, id: ++shotId.current });
     playGunshot();
     pulseController(controller.inputSource);
@@ -61,16 +70,18 @@ export function RightHandGun() {
 
   // Use select events only when a controller does not expose an analog trigger.
   useXRInputSourceEvent(controller.inputSource, "selectstart", () => {
+    logTriggerDebug("selectstart", readAnalogTrigger(controller));
     digitalPressed.current = true;
   }, []);
   useXRInputSourceEvent(controller.inputSource, "selectend", () => {
+    logTriggerDebug("selectend", readAnalogTrigger(controller));
     digitalPressed.current = false;
   }, []);
 
   useFrame(() => {
-    const analog = controller.gamepad?.[controller.layout?.selectComponentId]?.button;
+    const analog = readAnalogTrigger(controller);
     const value = Number.isFinite(analog) ? analog : Number(digitalPressed.current);
-    if (triggerGate.updateTriggerState(value)) fireWeapon();
+    if (triggerGate.updateTriggerState(value)) fireWeapon(analog);
   });
 
   return (
