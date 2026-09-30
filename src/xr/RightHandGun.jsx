@@ -9,7 +9,7 @@ import {
 } from "@react-three/xr";
 import { MathUtils, Raycaster } from "three";
 import { shoot } from "../shooting/shoot";
-import { ShotEffects } from "../shooting/ShotEffects";
+import { MuzzleFlash, ShotEffects } from "../shooting/ShotEffects";
 import { pulseController } from "../shooting/haptics";
 import { createTriggerGate } from "../shooting/trigger";
 import { playGunshot } from "../shooting/gunshotAudio";
@@ -86,6 +86,7 @@ export function RightHandGun() {
         </group>
       </XRSpace>
       {createPortal(<ShotEffects shot={shot} />, scene)}
+      {createPortal(<MuzzleFlash shot={shot} muzzle={muzzle} aim={aim} />, muzzle)}
     </>
   );
 }
