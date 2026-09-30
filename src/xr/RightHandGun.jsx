@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { createPortal, useFrame, useThree } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
 import {
@@ -12,9 +12,9 @@ import { shoot } from "../shooting/shoot";
 import { ShotEffects } from "../shooting/ShotEffects";
 import { pulseController } from "../shooting/haptics";
 import { createTriggerGate } from "../shooting/trigger";
+import { playGunshot } from "../shooting/gunshotAudio";
 
 const MODEL_URL = `${import.meta.env.BASE_URL}assets/models/weapons/desert_eagle.glb`;
-const GUNSHOT_URL = `${import.meta.env.BASE_URL}assets/audio/gunshot_pistol.wav`;
 // Fixed grip-coordinate correction for the observed ~90° upward barrel tilt.
 // User-adjustable weapon calibration will be a separate child transform.
 const XR_GRIP_CORRECTION = [-Math.PI / 2, 0, 0];
@@ -49,34 +49,13 @@ export function RightHandGun() {
   const [shot, setShot] = useState(null);
   const triggerGate = useMemo(() => createTriggerGate(), []);
   const digitalPressed = useRef(false);
-  const audio = useRef(null);
   const shotId = useRef(0);
-
-  useEffect(() => {
-    const sound = new Audio(GUNSHOT_URL);
-    sound.preload = "auto";
-    sound.load();
-    audio.current = sound;
-    return () => {
-      sound.pause();
-      audio.current = null;
-    };
-  }, []);
 
   const fireWeapon = useCallback(() => {
     if (!grip.current?.visible) return;
     const firedShot = shoot(muzzle, aim, scene, raycaster);
     setShot({ ...firedShot, id: ++shotId.current });
-    if (audio.current != null) {
-      try {
-        audio.current.pause();
-        audio.current.currentTime = 0;
-        void Promise.resolve(audio.current.play())
-          .catch((error) => console.warn("Gunshot audio could not play", error));
-      } catch (error) {
-        console.warn("Gunshot audio could not play", error);
-      }
-    }
+    playGunshot();
     pulseController(controller.inputSource);
   }, [muzzle, aim, scene, raycaster, controller.inputSource]);
 

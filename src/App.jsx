@@ -1,7 +1,9 @@
+import { useEffect } from "react";
 import { Canvas } from "@react-three/fiber";
 import { createXRStore, XR, XROrigin } from "@react-three/xr";
 import { Scene } from "./components/Scene";
 import { RightHandGun } from "./xr/RightHandGun";
+import { preloadGunshot, resumeGunshotAudio } from "./shooting/gunshotAudio";
 
 const xrStore = createXRStore({
   controller: {
@@ -11,10 +13,17 @@ const xrStore = createXRStore({
 });
 
 function App() {
+  useEffect(() => {
+    void preloadGunshot();
+  }, []);
+
   return (
     <>
       <button
-        onClick={() => xrStore.enterVR()}
+        onClick={() => {
+          void resumeGunshotAudio();
+          void xrStore.enterVR();
+        }}
         style={{
           position: "absolute",
           zIndex: 1,
