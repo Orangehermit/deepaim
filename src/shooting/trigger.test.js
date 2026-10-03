@@ -44,6 +44,34 @@ test("digital fallback still fires once per full select event cycle", () => {
   assert.deepEqual(firedAt([0, 1, 1, 0, 0, 1]), [1, 5]);
 });
 
+test("menu reset blocks held and partially released analog pulls until idle", () => {
+  const gate = createTriggerGate();
+  gate.updateTriggerState(0);
+  assert.equal(gate.updateTriggerState(0.25), true);
+  gate.updateTriggerState(1);
+  gate.updateTriggerState(0.5);
+  gate.reset();
+  for (const value of [1, 0.5, 0.6, 0.1, 0.25]) {
+    assert.equal(gate.updateTriggerState(value), false);
+  }
+  assert.equal(gate.updateTriggerState(0.05), false);
+  assert.equal(gate.updateTriggerState(0.25), true);
+  gate.updateTriggerState(0.35);
+  gate.updateTriggerState(0.3);
+  assert.equal(gate.updateTriggerState(0.34), true);
+});
+
+test("menu reset also blocks a held digital select until selectend", () => {
+  const gate = createTriggerGate();
+  gate.updateTriggerState(0);
+  assert.equal(gate.updateTriggerState(1), true);
+  gate.reset();
+  assert.equal(gate.updateTriggerState(1), false);
+  assert.equal(gate.updateTriggerState(1), false);
+  assert.equal(gate.updateTriggerState(0), false);
+  assert.equal(gate.updateTriggerState(1), true);
+});
+
 test("travel limits include the exact boundary and reject invalid settings", () => {
   const options = { fireThreshold: 0.25, releaseTravel: 0.125, repullTravel: 0.125, idleThreshold: 0.05 };
   assert.deepEqual(firedAt([0, 0.25, 0.75, 0.625, 0.5, 0.625], options), [1, 5]);

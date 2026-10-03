@@ -25,6 +25,12 @@ export function createTriggerGate({
   let peak = 0;
   let trough = 0;
   return {
+    // UI interaction must finish with a full release before shooting can resume.
+    reset() {
+      state = "WAITING_FOR_INITIAL_RELEASE";
+      peak = 0;
+      trough = 0;
+    },
     updateTriggerState(value) {
       if (!Number.isFinite(value)) return false;
 

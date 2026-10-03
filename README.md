@@ -30,6 +30,50 @@ Preview the production build locally:
 npm run preview
 ```
 
+## Settings UI phase 1
+
+In VR, the right controller's **B** or the left controller's **Y** opens and
+closes Settings. Either controller works on its own. A/X do not open the menu,
+and holding B/Y only acts once. Every opening starts at the Settings home page.
+The home page has two columns of square WEAPON, SHOOTING, AUDIO, and SYSTEM
+tiles. Only WEAPON is enabled in this prototype.
+
+WEAPON contains a UIKit Gun Pitch slider (0–45°, initially 25°), a Dual Wield
+switch (initially OFF), and BACK. These values are local UI test state: they do
+not change the gun pose, create another weapon, or persist after a reload.
+BACK returns home; B/Y closes the whole menu from either page.
+
+On opening, the menu snapshots the current camera's local `[0, -0.2, -0.8]`
+offset in world space and adopts only its world yaw. It then stays upright and
+fixed while the headset moves. The placement follows the camera-local transform
+approach in the [reference article](https://lain-lab.com/posts/astro-43-r3f-webxr-uikit-sync/).
+Tune placement, panel dimensions, spacing, colors, and font sizes in
+`src/ui/uiConfig.js`. The initial panel is 0.56 × 0.64 m, with 0.22 m square tiles.
+`MENU_SCALE` is the UIKit pixel size in meters per layout unit.
+
+Menu input runs before pointer targeting and shooting in each frame.
+`RightHandGun` suppresses every firing side effect while Settings is open and
+resets the existing trigger gate to require a release to 0.05 or below before
+shooting resumes. The original rapid-fire behavior then resumes unchanged.
+The right controller's UI ray becomes visible while Settings is open; the left
+controller keeps its normal ray. UI targeting and muzzle-based ballistics are
+independent. Ending the XR session closes Settings.
+
+Run the related checks with:
+
+```bash
+node --test src/shooting/*.test.js src/xr/*.test.js src/store/*.test.js
+```
+
+On Quest 3, check B-only and Y-only operation, long presses, A/X doing nothing,
+reopening at home, and a usable panel position at different headings. Confirm
+that the panel stays fixed when you move your head. Use each controller's ray
+to select WEAPON, drag the slider, toggle the switch, and choose BACK. Check
+that no shot, gunshot sound, or shooting haptic occurs while using the UI.
+Close Settings while holding the trigger: shooting must wait for a full release
+and a new pull. Finally check the existing shallow-release rapid-fire cycle.
+Physical readability, reach, and XR interaction feel require a Quest test.
+
 ## Shooting loop V1
 
 In VR, `public/assets/models/weapons/desert_eagle.glb` is attached to the right
@@ -64,9 +108,9 @@ afterward does not move them. The old orange `DebugShotRay` remains in the
 repository for troubleshooting but is not rendered during normal firing.
 
 The right controller model is hidden while its UI cursor remains available; its
-continuous pointer line is hidden. The left controller keeps the original UI
-pointer and does not fire. Using the right trigger on the ON/OFF control also
-fires a shot. A hemisphere light and directional light reveal the gun's dark
+continuous pointer line is shown only while Settings is open. The left controller
+keeps the original UI pointer and does not fire. Settings interaction suppresses
+shooting until the trigger has been released after closing. A hemisphere light and directional light reveal the gun's dark
 materials without changing the GLB.
 
 The existing Zustand cube and ON/OFF control are preserved at x = 0.6 m,

@@ -14,6 +14,7 @@ import { DEFAULT_WEAPON_POSE_DEG } from "../shooting/shootingConfig.js";
 import { pulseController } from "../shooting/haptics";
 import { createTriggerGate } from "../shooting/trigger";
 import { playGunshot } from "../shooting/gunshotAudio";
+import { useAppStore } from "../store/useAppStore";
 
 const MODEL_URL = `${import.meta.env.BASE_URL}assets/models/weapons/desert_eagle.glb`;
 // Fixed grip-coordinate correction for the observed ~90° upward barrel tilt.
@@ -32,6 +33,7 @@ const readAnalogTrigger = (controller) =>
 // Mounted only for the right controller by the XR store. Shooting stays neutral.
 export function RightHandGun() {
   const controller = useXRInputSourceStateContext("controller");
+  const menuOpen = useAppStore((state) => state.menuOpen);
   const scene = useThree((state) => state.scene);
   const grip = useRef(null);
   const { scene: gltfScene } = useGLTF(MODEL_URL);
@@ -55,7 +57,7 @@ export function RightHandGun() {
   const shotId = useRef(0);
 
   const fireWeapon = useCallback(() => {
-    if (!grip.current?.visible) return;
+    if (useAppStore.getState().menuOpen || !grip.current?.visible) return;
     const firedShot = shoot(muzzle, aim, scene, raycaster);
     setShot({ ...firedShot, id: ++shotId.current });
     playGunshot();
@@ -71,6 +73,11 @@ export function RightHandGun() {
   }, []);
 
   useFrame(() => {
+    // Read synchronously: B/Y can open the menu earlier in this same frame.
+    if (useAppStore.getState().menuOpen) {
+      triggerGate.reset();
+      return;
+    }
     const analog = readAnalogTrigger(controller);
     const value = Number.isFinite(analog) ? analog : Number(digitalPressed.current);
     if (triggerGate.updateTriggerState(value)) fireWeapon();
@@ -78,7 +85,7 @@ export function RightHandGun() {
 
   return (
     <>
-      <DefaultXRController model={false} grabPointer={false} rayPointer={{ rayModel: false }} />
+      <DefaultXRController model={false} grabPointer={false} rayPointer={{ rayModel: menuOpen }} />
       <XRSpace space="grip-space" ref={grip}>
         <group name="XRGripCorrection" rotation={XR_GRIP_CORRECTION} pointerEvents="none">
           <group name="DefaultWeaponPose" rotation={DEFAULT_WEAPON_ROTATION}>

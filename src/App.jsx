@@ -3,6 +3,8 @@ import { Canvas } from "@react-three/fiber";
 import { createXRStore, XR, XROrigin } from "@react-three/xr";
 import { Scene } from "./components/Scene";
 import { RightHandGun } from "./xr/RightHandGun";
+import { MenuInputController } from "./xr/MenuInputController";
+import { SettingsMenu } from "./ui/SettingsMenu";
 import { preloadGunshot, resumeGunshotAudio } from "./shooting/gunshotAudio";
 
 const xrStore = createXRStore({
@@ -41,6 +43,8 @@ function App() {
         <XR store={xrStore}>
           <Scene />
           <XROrigin />
+          <MenuInputController />
+          <SettingsMenu />
         </XR>
       </Canvas>
     </>
