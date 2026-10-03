@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: ["feature\\settings-ui"]
+    branches: ["feature/settings-ui"]
   workflow_dispatch:
 
 permissions:
