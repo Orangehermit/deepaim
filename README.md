@@ -163,7 +163,7 @@ node --test src/shooting/shoot.test.js src/shooting/trigger.test.js src/shooting
 Quest 3 check: enter VR and hold the right controller in a natural handgun
 stance without bending the wrist to aim at the target. Check whether the
 Desert Eagle barrel is approximately horizontal. To tune this neutral stance,
-change only `DEFAULT_WEAPON_POSE_DEG.pitch` in `shootingConfig.js` (try +20°, +25°,
+change only `WEAPON_POSE_DEG.pitch` in `shootingConfig.js` (try +20°, +25°,
 or +30°); leave the fixed XR grip correction and GLB transforms untouched.
 Move and rotate the controller to check that the weapon follows at a believable scale.
 Aim at the blue target and slowly pull the right trigger. Confirm one shot only

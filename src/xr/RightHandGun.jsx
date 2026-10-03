@@ -9,7 +9,7 @@ import {
 import { MathUtils, Raycaster } from "three";
 import { shoot } from "../shooting/shoot";
 import { ShotEffects } from "../shooting/ShotEffects";
-import { DEFAULT_WEAPON_POSE_DEG } from "../shooting/shootingConfig.js";
+import { WEAPON_POSE_DEG } from "../shooting/shootingConfig.js";
 import { pulseController } from "../shooting/haptics";
 import { createTriggerGate } from "../shooting/trigger";
 import { playGunshot } from "../shooting/gunshotAudio";
@@ -22,9 +22,9 @@ const MODEL_URL = `${import.meta.env.BASE_URL}assets/models/weapons/desert_eagle
 const XR_GRIP_CORRECTION = [-Math.PI / 2, 0, 0];
 // Developer-defined neutral handgun stance; user calibration stays zero-centered.
 const DEFAULT_WEAPON_ROTATION = [
-  MathUtils.degToRad(DEFAULT_WEAPON_POSE_DEG.pitch),
-  MathUtils.degToRad(DEFAULT_WEAPON_POSE_DEG.yaw),
-  MathUtils.degToRad(DEFAULT_WEAPON_POSE_DEG.roll),
+  MathUtils.degToRad(WEAPON_POSE_DEG.pitch),
+  MathUtils.degToRad(WEAPON_POSE_DEG.yaw),
+  MathUtils.degToRad(WEAPON_POSE_DEG.roll),
 ];
 
 const readAnalogTrigger = (controller) =>
