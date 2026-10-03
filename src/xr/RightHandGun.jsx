@@ -9,7 +9,8 @@ import {
 } from "@react-three/xr";
 import { MathUtils, Raycaster } from "three";
 import { shoot } from "../shooting/shoot";
-import { MuzzleFlash, ShotEffects } from "../shooting/ShotEffects";
+import { ShotEffects } from "../shooting/ShotEffects";
+import { DEFAULT_WEAPON_POSE_DEG } from "../shooting/shootingConfig.js";
 import { pulseController } from "../shooting/haptics";
 import { createTriggerGate } from "../shooting/trigger";
 import { playGunshot } from "../shooting/gunshotAudio";
@@ -19,20 +20,14 @@ const MODEL_URL = `${import.meta.env.BASE_URL}assets/models/weapons/desert_eagle
 // User-adjustable weapon calibration will be a separate child transform.
 const XR_GRIP_CORRECTION = [-Math.PI / 2, 0, 0];
 // Developer-defined neutral handgun stance; user calibration stays zero-centered.
-const DEFAULT_WEAPON_POSE_DEG = { pitch: 25, yaw: 0, roll: 0 };
 const DEFAULT_WEAPON_ROTATION = [
   MathUtils.degToRad(DEFAULT_WEAPON_POSE_DEG.pitch),
   MathUtils.degToRad(DEFAULT_WEAPON_POSE_DEG.yaw),
   MathUtils.degToRad(DEFAULT_WEAPON_POSE_DEG.roll),
 ];
 
-// TEMP: Quest 3 trigger-event measurement. Remove after input experiment.
 const readAnalogTrigger = (controller) =>
   controller.gamepad?.[controller.layout?.selectComponentId]?.button;
-const logTriggerDebug = (event, value) => {
-  const measuredValue = Number.isFinite(value) ? value.toFixed(3) : "unavailable";
-  console.log(`[TriggerDebug] ${performance.now().toFixed(1)} ${event} value=${measuredValue}`);
-};
 
 // Mounted only for the right controller by the XR store. Shooting stays neutral.
 export function RightHandGun() {
@@ -59,10 +54,9 @@ export function RightHandGun() {
   const digitalPressed = useRef(false);
   const shotId = useRef(0);
 
-  const fireWeapon = useCallback((analog) => {
+  const fireWeapon = useCallback(() => {
     if (!grip.current?.visible) return;
     const firedShot = shoot(muzzle, aim, scene, raycaster);
-    logTriggerDebug("fire", analog);
     setShot({ ...firedShot, id: ++shotId.current });
     playGunshot();
     pulseController(controller.inputSource);
@@ -70,18 +64,16 @@ export function RightHandGun() {
 
   // Use select events only when a controller does not expose an analog trigger.
   useXRInputSourceEvent(controller.inputSource, "selectstart", () => {
-    logTriggerDebug("selectstart", readAnalogTrigger(controller));
     digitalPressed.current = true;
   }, []);
   useXRInputSourceEvent(controller.inputSource, "selectend", () => {
-    logTriggerDebug("selectend", readAnalogTrigger(controller));
     digitalPressed.current = false;
   }, []);
 
   useFrame(() => {
     const analog = readAnalogTrigger(controller);
     const value = Number.isFinite(analog) ? analog : Number(digitalPressed.current);
-    if (triggerGate.updateTriggerState(value)) fireWeapon(analog);
+    if (triggerGate.updateTriggerState(value)) fireWeapon();
   });
 
   return (
@@ -97,7 +89,6 @@ export function RightHandGun() {
         </group>
       </XRSpace>
       {createPortal(<ShotEffects shot={shot} />, scene)}
-      {createPortal(<MuzzleFlash shot={shot} muzzle={muzzle} aim={aim} />, muzzle)}
     </>
   );
 }

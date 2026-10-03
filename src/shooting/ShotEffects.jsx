@@ -1,11 +1,10 @@
-import { useLayoutEffect, useMemo, useRef } from "react";
+import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
 import { Quaternion, Vector3 } from "three";
 import {
   MUZZLE_FLASH_DURATION_MS,
   MUZZLE_FLASH_SCALE,
-  MUZZLE_FLASH_SHRINK,
   TRACER_DURATION_MS,
   TRACER_LENGTH,
   TRACER_WIDTH,
@@ -15,7 +14,7 @@ import { SHOT_RANGE } from "./shoot.js";
 const WORLD_UP = new Vector3(0, 1, 0);
 const LOCAL_FORWARD = new Vector3(0, 0, -1);
 const NO_RAYCAST = () => {};
-const MUZZLE_FLASH_URL = `${import.meta.env.BASE_URL}assets/models/effects/mazzle_flash.glb`;
+const MUZZLE_FLASH_URL = `${import.meta.env.BASE_URL}assets/models/effects/muzzle_flash4.glb`;
 
 useGLTF.preload(MUZZLE_FLASH_URL);
 
@@ -51,7 +50,7 @@ function BulletTracer({ shot }) {
   );
 }
 
-export function MuzzleFlash({ shot, muzzle, aim }) {
+export function MuzzleFlash({ shot }) {
   const flash = useRef(null);
   const startedAt = useRef(null);
   const { scene } = useGLTF(MUZZLE_FLASH_URL);
@@ -62,36 +61,34 @@ export function MuzzleFlash({ shot, muzzle, aim }) {
     });
     return instance;
   }, [scene]);
-
-  useLayoutEffect(() => {
-    if (shot == null || flash.current == null) return;
-    muzzle.updateWorldMatrix(true, false);
-    aim.updateWorldMatrix(true, false);
-    const aimLocal = muzzle.worldToLocal(aim.getWorldPosition(new Vector3())).normalize();
-    flash.current.quaternion.setFromUnitVectors(LOCAL_FORWARD, aimLocal);
-    flash.current.scale.setScalar(MUZZLE_FLASH_SCALE);
-    flash.current.visible = true;
-    startedAt.current = null;
-  }, [shot, muzzle, aim]);
+  const position = useMemo(() => shot.origin.clone(), [shot]);
+  const orientation = useMemo(() => {
+    const base = new Quaternion().setFromUnitVectors(LOCAL_FORWARD, shot.direction);
+    const roll = new Quaternion().setFromAxisAngle(LOCAL_FORWARD, Math.random() * Math.PI * 2);
+    // Local roll leaves the forward axis aligned with the shot direction.
+    return base.multiply(roll);
+  }, [shot]);
 
   useFrame(({ clock }) => {
-    if (shot == null || flash.current == null) return;
+    if (flash.current == null || !flash.current.visible) return;
     if (startedAt.current == null) startedAt.current = clock.elapsedTime;
-    const progress = (clock.elapsedTime - startedAt.current) * 1000 / MUZZLE_FLASH_DURATION_MS;
-    if (progress >= 1) {
+    if ((clock.elapsedTime - startedAt.current) * 1000 >= MUZZLE_FLASH_DURATION_MS) {
       flash.current.visible = false;
-      return;
     }
-    flash.current.scale.setScalar(MUZZLE_FLASH_SCALE * (1 - progress * MUZZLE_FLASH_SHRINK));
   });
 
   return (
-    <group ref={flash} visible={false} pointerEvents="none">
+    <group ref={flash} position={position} quaternion={orientation} scale={MUZZLE_FLASH_SCALE} pointerEvents="none">
       <primitive object={model} />
     </group>
   );
 }
 
 export function ShotEffects({ shot }) {
-  return shot == null ? null : <BulletTracer key={`tracer-${shot.id}`} shot={shot} />;
+  return shot == null ? null : (
+    <>
+      <BulletTracer key={`tracer-${shot.id}`} shot={shot} />
+      <MuzzleFlash key={`flash-${shot.id}`} shot={shot} />
+    </>
+  );
 }

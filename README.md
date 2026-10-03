@@ -42,13 +42,18 @@ The transform order is grip-space → `XRGripCorrection` → `DefaultWeaponPose`
 internal transforms or scale.
 The model's `Gun_Root`, `Muzzle_Point`, and `Aim_Point` are used directly.
 `Rear_Point` is retained for a future weapon collider and does not affect firing.
-The right controller's analog select trigger fires once when its value reaches
-0.85. It must drop below 0.70 before the next shot can fire. Controllers without
-an analog value use `selectstart` / `selectend` as a digital fallback. A single
-`fireWeapon()` call raycasts from the muzzle's world position toward `Aim_Point`'s
+The right controller's analog select trigger fires its first shot when its value
+reaches 0.25. After a shot, the gate tracks the deepest pull and waits for at
+least 0.03 of release, then tracks the shallowest position and waits for at
+least 0.03 of repull before firing again. Returning to 0.05 or below resets
+the gate to first-shot behavior. These values are set in `shootingConfig.js`.
+Controllers without an analog value use `selectstart` / `selectend` as a digital
+fallback. A single `fireWeapon()` call raycasts from the muzzle's world position
+toward `Aim_Point`'s
 world position, starts a moving white tracer and muzzle flash at the muzzle,
 restarts the gunshot audio, and requests a short controller haptic pulse.
-Holding or releasing the trigger does not fire additional shots. The muzzle's
+Holding or releasing the trigger does not fire additional shots. A distinct
+repull after release is required. The muzzle's
 rotation and the XR controller's targeting ray do not define the shot direction.
 
 A blue target, 40 cm in diameter, sits at `[0, 1.5, -3]`. A hit turns it red;
@@ -78,7 +83,7 @@ Implementation:
   shots in this prototype.
 - `src/shooting/Target.jsx`: local blue-to-red hit response.
 - `src/shooting/ShotEffects.jsx`: short moving tracer and muzzle flash.
-- `src/shooting/trigger.js`: threshold crossing and hysteresis.
+- `src/shooting/trigger.js`: first-shot threshold and relative release/repull gate.
 - `src/shooting/shootingConfig.js`: values to tune during Quest tests.
 - `src/shooting/haptics.js`: optional controller pulse.
 
@@ -91,13 +96,14 @@ node --test src/shooting/shoot.test.js src/shooting/trigger.test.js src/shooting
 Quest 3 check: enter VR and hold the right controller in a natural handgun
 stance without bending the wrist to aim at the target. Check whether the
 Desert Eagle barrel is approximately horizontal. To tune this neutral stance,
-change only `DEFAULT_WEAPON_POSE_DEG.pitch` in `RightHandGun.jsx` (try +20°, +25°,
+change only `DEFAULT_WEAPON_POSE_DEG.pitch` in `shootingConfig.js` (try +20°, +25°,
 or +30°); leave the fixed XR grip correction and GLB transforms untouched.
 Move and rotate the controller to check that the weapon follows at a believable scale.
 Aim at the blue target and slowly pull the right trigger. Confirm one shot only
 when the trigger reaches the fire threshold: white tracer, brief muzzle flash,
 gunshot sound, haptic pulse, and red target on a hit. Holding the trigger should
-not repeat; dropping below the reset threshold and pulling again should fire.
+not repeat; releasing slightly from the deepest pull and then repulling should
+fire the next shot. A full release should restore the first-shot threshold.
 Check a miss, missing haptics, the left trigger (no shot), and the ON/OFF
 control as well. Fine grip-angle calibration is a later task; real-device
 alignment remains to be checked.
