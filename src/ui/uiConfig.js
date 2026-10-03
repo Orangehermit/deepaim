@@ -18,3 +18,10 @@ export const VALUE_FONT_SIZE = 30;
 export const PANEL_BACKGROUND_COLOR = "#f3f5f7";
 export const TEXT_COLOR = "#17202a";
 export const PANEL_BORDER_RADIUS = 16;
+
+// Gun UI targeting and its visualization share the same range, in meters.
+export const UI_POINTER_TYPE = "gun-ui";
+export const UI_POINTER_MAX_DISTANCE = 3;
+export const UI_POINTER_LINE_WIDTH = 0.002;
+export const UI_POINTER_COLOR = "#00cfff";
+export const UI_POINTER_HIT_DOT_SIZE = 0.006; // Radius in meters.

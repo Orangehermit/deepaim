@@ -30,10 +30,10 @@ Preview the production build locally:
 npm run preview
 ```
 
-## Settings UI phase 1
+## Settings UI phases 1–2
 
 In VR, the right controller's **B** or the left controller's **Y** opens and
-closes Settings. Either controller works on its own. A/X do not open the menu,
+closes Settings. Either controller can open/close it on its own. A/X do not open the menu,
 and holding B/Y only acts once. Every opening starts at the Settings home page.
 The home page has two columns of square WEAPON, SHOOTING, AUDIO, and SYSTEM
 tiles. Only WEAPON is enabled in this prototype.
@@ -55,20 +55,42 @@ Menu input runs before pointer targeting and shooting in each frame.
 `RightHandGun` suppresses every firing side effect while Settings is open and
 resets the existing trigger gate to require a release to 0.05 or below before
 shooting resumes. The original rapid-fire behavior then resumes unchanged.
-The right controller's UI ray becomes visible while Settings is open; the left
-controller keeps its normal ray. UI targeting and muzzle-based ballistics are
-independent. Ending the XR session closes Settings.
+Ending the XR session closes Settings.
+
+Phase 2 uses a cyan laser from the right gun's `Muzzle_Point`. Both the visible
+laser and actual UI pointer use the normalized world-space vector from
+`Muzzle_Point` to `Aim_Point`, exactly as shooting does. The controller's
+target-ray orientation does not define this line. XR `selectstart` / `selectend`
+events drive the normal pointer event system, including slider pointer capture.
+The laser stops at the UI intersection, with a small hit dot. With no hit it
+extends to the configured 3 m maximum; hit testing has the same range limit.
+
+The right standard controller pointer is removed, including its interaction.
+Settings accepts only the `gun-ui` pointer type, so the left standard controller
+ray cannot hover or select it. Y still opens/closes Settings, but selection in
+Phase 2 requires the right gun. `GunUIPointer` accepts an input source, helper
+objects, enabled state/getter, and optional buffered XR events; it has no hand
+selection logic and can be reused for a left gun in a later phase.
+
+Tune `UI_POINTER_MAX_DISTANCE`, `UI_POINTER_LINE_WIDTH`, `UI_POINTER_COLOR`, and
+`UI_POINTER_HIT_DOT_SIZE` in `src/ui/uiConfig.js`. The initial line is 2 mm wide,
+and the hit dot has a 6 mm radius. The laser is hidden and interaction disabled
+when Settings is closed. It is a separate effect from the shooting tracer.
 
 Run the related checks with:
 
 ```bash
-node --test src/shooting/*.test.js src/xr/*.test.js src/store/*.test.js
+node --test src/shooting/*.test.js src/xr/*.test.js src/store/*.test.js src/ui/*.test.js
 ```
 
 On Quest 3, check B-only and Y-only operation, long presses, A/X doing nothing,
 reopening at home, and a usable panel position at different headings. Confirm
-that the panel stays fixed when you move your head. Use each controller's ray
-to select WEAPON, drag the slider, toggle the switch, and choose BACK. Check
+that the panel stays fixed when you move your head. Aim the right gun at WEAPON,
+pull/release the trigger to select it, hold the trigger while moving the gun
+across the slider, toggle the switch, and choose BACK. Check that the laser
+origin is the muzzle and its direction matches shooting at the same gun pose.
+Make sure the laser and hit dot follow the actual UI hit and that the left
+standard ray does not hover or select Settings. Check
 that no shot, gunshot sound, or shooting haptic occurs while using the UI.
 Close Settings while holding the trigger: shooting must wait for a full release
 and a new pull. Finally check the existing shallow-release rapid-fire cycle.
@@ -107,10 +129,11 @@ use the firing-time muzzle position and direction, so moving the controller
 afterward does not move them. The old orange `DebugShotRay` remains in the
 repository for troubleshooting but is not rendered during normal firing.
 
-The right controller model is hidden while its UI cursor remains available; its
-continuous pointer line is shown only while Settings is open. The left controller
-keeps the original UI pointer and does not fire. Settings interaction suppresses
-shooting until the trigger has been released after closing. A hemisphere light and directional light reveal the gun's dark
+The right controller model and standard pointer are absent; its gun muzzle UI
+laser is shown only while Settings is open. The left controller keeps the
+original pointer, which cannot interact with Settings, and does not fire.
+Settings interaction suppresses shooting until the trigger has been released
+after closing. A hemisphere light and directional light reveal the gun's dark
 materials without changing the GLB.
 
 The existing Zustand cube and ON/OFF control are preserved at x = 0.6 m,

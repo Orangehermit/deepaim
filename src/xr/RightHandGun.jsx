@@ -2,7 +2,6 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { createPortal, useFrame, useThree } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
 import {
-  DefaultXRController,
   XRSpace,
   useXRInputSourceEvent,
   useXRInputSourceStateContext,
@@ -15,6 +14,7 @@ import { pulseController } from "../shooting/haptics";
 import { createTriggerGate } from "../shooting/trigger";
 import { playGunshot } from "../shooting/gunshotAudio";
 import { useAppStore } from "../store/useAppStore";
+import { GunUIPointer } from "../ui/GunUIPointer";
 
 const MODEL_URL = `${import.meta.env.BASE_URL}assets/models/weapons/desert_eagle.glb`;
 // Fixed grip-coordinate correction for the observed ~90° upward barrel tilt.
@@ -30,10 +30,12 @@ const DEFAULT_WEAPON_ROTATION = [
 const readAnalogTrigger = (controller) =>
   controller.gamepad?.[controller.layout?.selectComponentId]?.button;
 
+// The pointer reads this before targeting, including a B/Y change in this frame.
+const isMenuOpen = () => useAppStore.getState().menuOpen;
+
 // Mounted only for the right controller by the XR store. Shooting stays neutral.
 export function RightHandGun() {
   const controller = useXRInputSourceStateContext("controller");
-  const menuOpen = useAppStore((state) => state.menuOpen);
   const scene = useThree((state) => state.scene);
   const grip = useRef(null);
   const { scene: gltfScene } = useGLTF(MODEL_URL);
@@ -85,7 +87,13 @@ export function RightHandGun() {
 
   return (
     <>
-      <DefaultXRController model={false} grabPointer={false} rayPointer={{ rayModel: menuOpen }} />
+      <GunUIPointer
+        enabled={isMenuOpen}
+        inputSource={controller.inputSource}
+        events={controller.events}
+        muzzle={muzzle}
+        aim={aim}
+      />
       <XRSpace space="grip-space" ref={grip}>
         <group name="XRGripCorrection" rotation={XR_GRIP_CORRECTION} pointerEvents="none">
           <group name="DefaultWeaponPose" rotation={DEFAULT_WEAPON_ROTATION}>

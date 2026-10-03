@@ -11,6 +11,7 @@ import {
   CATEGORY_TILE_SIZE, CATEGORY_TILE_GAP,
   TITLE_FONT_SIZE, LABEL_FONT_SIZE, VALUE_FONT_SIZE,
   PANEL_BACKGROUND_COLOR, TEXT_COLOR, PANEL_BORDER_RADIUS,
+  UI_POINTER_TYPE,
 } from "./uiConfig";
 
 function SettingsHome({ onWeapon }) {
@@ -72,6 +73,7 @@ export function SettingsMenu() {
     <group ref={panel} name="SettingsMenu">
       {session != null && menuOpen && (
         <Container
+          pointerEventsType={{ allow: UI_POINTER_TYPE }}
           pixelSize={MENU_SCALE}
           width={MENU_WIDTH}
           height={MENU_HEIGHT}
