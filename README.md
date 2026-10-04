@@ -30,7 +30,7 @@ Preview the production build locally:
 npm run preview
 ```
 
-## Settings UI phases 1–2
+## Settings UI phases 1–3
 
 In VR, the right controller's **B** or the left controller's **Y** opens and
 closes Settings. Either controller can open/close it on its own. A/X do not open the menu,
@@ -38,9 +38,20 @@ and holding B/Y only acts once. Every opening starts at the Settings home page.
 The home page has two columns of square WEAPON, SHOOTING, AUDIO, and SYSTEM
 tiles. Only WEAPON is enabled in this prototype.
 
-WEAPON contains a UIKit Gun Pitch slider (0–45°, initially 25°), a Dual Wield
-switch (initially OFF), and BACK. These values are local UI test state: they do
-not change the gun pose, create another weapon, or persist after a reload.
+WEAPON contains six single-line `NumericSetting` rows: Pitch / Yaw / Roll
+(-90–90°, 0.5° steps) and X / Y / Z Offset (-10–10 cm, 0.5 cm steps).
+Each row aligns its label, bold magenta one-decimal value, unit, colon,
+decrement button, UIKit slider, and increment button. Clicking an arrow changes
+one step; holding it does not repeat. Slider dragging and arrows share the same
+local state and clamped step rounding. The 56 × 56 mm arrow buttons use inline
+SVG triangles because the default UIKit font does not include ◀ / ▶ glyphs.
+
+Initial values come from `shootingConfig.js`; meter offsets are multiplied by
+100 once to initialize the UI's cm values. Dual Wield (initially OFF) and BACK
+remain available. Tracer numeric controls are deferred. These values are local
+UI test state: they do not change the gun pose, position or tracer, create
+another weapon, or persist after a reload. Values remain during page navigation
+and menu closing/reopening in the same mounted session.
 BACK returns home; B/Y closes the whole menu from either page.
 
 On opening, the menu snapshots the current camera's local `[0, -0.2, -0.8]`
@@ -48,8 +59,14 @@ offset in world space and adopts only its world yaw. It then stays upright and
 fixed while the headset moves. The placement follows the camera-local transform
 approach in the [reference article](https://lain-lab.com/posts/astro-43-r3f-webxr-uikit-sync/).
 Tune placement, panel dimensions, spacing, colors, and font sizes in
-`src/ui/uiConfig.js`. The initial panel is 0.56 × 0.64 m, with 0.22 m square tiles.
+`src/ui/uiConfig.js`. Home is 0.56 × 0.64 m, with 0.22 m square tiles;
+WEAPON expands to 0.76 × 0.72 m to fit aligned rows and usable controls.
 `MENU_SCALE` is the UIKit pixel size in meters per layout unit.
+Tune numeric row/column sizes, arrow target/icon sizes, group gaps, font sizes,
+and magenta `SETTING_VALUE_COLOR` there. `NumericSetting` accepts `label`,
+`value`, `min`, `max`, `step`, `unit`, and `onChange`; its value is controlled
+by the parent. The slider range is shifted to zero internally so its native
+step snapping follows the same lower-bound grid as the buttons.
 
 Menu input runs before pointer targeting and shooting in each frame.
 `RightHandGun` suppresses every firing side effect while Settings is open and
@@ -87,7 +104,10 @@ On Quest 3, check B-only and Y-only operation, long presses, A/X doing nothing,
 reopening at home, and a usable panel position at different headings. Confirm
 that the panel stays fixed when you move your head. Aim the right gun at WEAPON,
 pull/release the trigger to select it, hold the trigger while moving the gun
-across the slider, toggle the switch, and choose BACK. Check that the laser
+across each slider, then use the arrows for single 0.5-unit adjustments.
+Check -90.0° / 90.0° and -10.0 cm / 10.0 cm limits, magenta value readability,
+row alignment, arrow hit areas, and slider-to-arrow targeting without accidental
+neighbor activation. Toggle Dual Wield and choose BACK. Check that the laser
 origin is the muzzle and its direction matches shooting at the same gun pose.
 Make sure the laser and hit dot follow the actual UI hit and that the left
 standard ray does not hover or select Settings. Check

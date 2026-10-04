@@ -2,15 +2,23 @@ import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useThree } from "@react-three/fiber";
 import { useXR } from "@react-three/xr";
 import { Container, Text } from "@react-three/uikit";
-import { Button, Slider, Switch } from "@react-three/uikit-default";
+import { Button, Switch } from "@react-three/uikit-default";
 import { Euler, Quaternion } from "three";
 import { useAppStore } from "../store/useAppStore";
 import {
+  WEAPON_POSE_DEG,
+  WEAPON_POSITION_OFFSET_X_M, WEAPON_POSITION_OFFSET_Y_M, WEAPON_POSITION_OFFSET_Z_M,
+  DUAL_WIELD_ENABLED,
+} from "../shooting/shootingConfig.js";
+import { NumericSetting } from "./NumericSetting.jsx";
+import {
   MENU_DISTANCE, MENU_VERTICAL_OFFSET, MENU_HORIZONTAL_OFFSET,
-  MENU_WIDTH, MENU_HEIGHT, MENU_SCALE, PANEL_PADDING, PANEL_GAP,
+  MENU_WIDTH, MENU_HEIGHT, WEAPON_MENU_WIDTH, WEAPON_MENU_HEIGHT,
+  MENU_SCALE, PANEL_PADDING, PANEL_GAP,
   CATEGORY_TILE_SIZE, CATEGORY_TILE_GAP,
   TITLE_FONT_SIZE, LABEL_FONT_SIZE, VALUE_FONT_SIZE,
   PANEL_BACKGROUND_COLOR, TEXT_COLOR, PANEL_BORDER_RADIUS,
+  SETTING_ROW_HEIGHT, SETTING_ROW_GAP, SETTING_GROUP_GAP,
   UI_POINTER_TYPE,
 } from "./uiConfig";
 
@@ -44,8 +52,14 @@ export function SettingsMenu() {
   const settingsPage = useAppStore((state) => state.settingsPage);
   const setSettingsPage = useAppStore((state) => state.setSettingsPage);
   // Prototype values only. They deliberately do not change the weapon or persist.
-  const [gunPitch, setGunPitch] = useState(25);
-  const [dualWield, setDualWield] = useState(false);
+  const [pitch, setPitch] = useState(WEAPON_POSE_DEG.pitch);
+  const [yaw, setYaw] = useState(WEAPON_POSE_DEG.yaw);
+  const [roll, setRoll] = useState(WEAPON_POSE_DEG.roll);
+  // Only the initial offset is converted from meters; UI state stays in cm.
+  const [xOffsetCm, setXOffsetCm] = useState(WEAPON_POSITION_OFFSET_X_M * 100);
+  const [yOffsetCm, setYOffsetCm] = useState(WEAPON_POSITION_OFFSET_Y_M * 100);
+  const [zOffsetCm, setZOffsetCm] = useState(WEAPON_POSITION_OFFSET_Z_M * 100);
+  const [dualWield, setDualWield] = useState(DUAL_WIELD_ENABLED);
   const panel = useRef(null);
   const getThreeState = useThree((state) => state.get);
   const orientation = useMemo(() => ({ quaternion: new Quaternion(), euler: new Euler() }), []);
@@ -75,8 +89,8 @@ export function SettingsMenu() {
         <Container
           pointerEventsType={{ allow: UI_POINTER_TYPE }}
           pixelSize={MENU_SCALE}
-          width={MENU_WIDTH}
-          height={MENU_HEIGHT}
+          width={settingsPage === "weapon" ? WEAPON_MENU_WIDTH : MENU_WIDTH}
+          height={settingsPage === "weapon" ? WEAPON_MENU_HEIGHT : MENU_HEIGHT}
           padding={PANEL_PADDING}
           gap={PANEL_GAP}
           flexDirection="column"
@@ -89,14 +103,19 @@ export function SettingsMenu() {
             {settingsPage === "weapon" ? "WEAPON" : "SETTINGS"}
           </Text>
           {settingsPage === "weapon" ? (
-            <Container width="100%" flexGrow={1} flexDirection="column" gap={PANEL_GAP}>
-              <Text fontSize={LABEL_FONT_SIZE}>Gun Pitch</Text>
-              <Container width="100%" paddingY={16}>
-                <Slider min={0} max={45} step={1} value={gunPitch} onValueChange={setGunPitch} />
+            <Container width="100%" flexGrow={1} flexDirection="column" gap={SETTING_GROUP_GAP}>
+              <Container width="100%" flexDirection="column" gap={SETTING_ROW_GAP}>
+                <NumericSetting label="Pitch" value={pitch} min={-90} max={90} step={0.5} unit="°" onChange={setPitch} />
+                <NumericSetting label="Yaw" value={yaw} min={-90} max={90} step={0.5} unit="°" onChange={setYaw} />
+                <NumericSetting label="Roll" value={roll} min={-90} max={90} step={0.5} unit="°" onChange={setRoll} />
               </Container>
-              <Text fontSize={VALUE_FONT_SIZE}>{`${gunPitch}°`}</Text>
-              <Text fontSize={LABEL_FONT_SIZE}>Dual Wield</Text>
-              <Container flexDirection="row" alignItems="center" gap={PANEL_GAP}>
+              <Container width="100%" flexDirection="column" gap={SETTING_ROW_GAP}>
+                <NumericSetting label="X Offset" value={xOffsetCm} min={-10} max={10} step={0.5} unit="cm" onChange={setXOffsetCm} />
+                <NumericSetting label="Y Offset" value={yOffsetCm} min={-10} max={10} step={0.5} unit="cm" onChange={setYOffsetCm} />
+                <NumericSetting label="Z Offset" value={zOffsetCm} min={-10} max={10} step={0.5} unit="cm" onChange={setZOffsetCm} />
+              </Container>
+              <Container height={SETTING_ROW_HEIGHT} flexShrink={0} flexDirection="row" alignItems="center" gap={PANEL_GAP}>
+                <Text fontSize={LABEL_FONT_SIZE}>Dual Wield:</Text>
                 <Switch
                   checked={dualWield}
                   onCheckedChange={setDualWield}
@@ -108,7 +127,7 @@ export function SettingsMenu() {
                 />
                 <Text fontSize={VALUE_FONT_SIZE}>{dualWield ? "ON" : "OFF"}</Text>
               </Container>
-              <Button variant="outline" height={64} marginTop="auto" onClick={() => setSettingsPage("home")}>
+              <Button variant="outline" height={64} flexShrink={0} marginTop="auto" onClick={() => setSettingsPage("home")}>
                 <Text fontSize={LABEL_FONT_SIZE} lineHeight="120%">BACK</Text>
               </Button>
             </Container>
