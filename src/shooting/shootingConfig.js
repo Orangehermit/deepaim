@@ -1,4 +1,22 @@
 // --------------------------------------------------
+// Default Weapon Pose
+// --------------------------------------------------
+// 銃の姿勢制御の第二層
+// ユーザーが自然に銃を構えた時に銃を奥側に倒す角度に対する補正値
+// Quest 3のTouch+コントローラーの場合は25°くらい（他のコントローラーについては現在未検証）
+export const WEAPON_POSE_DEG = { pitch: 25, yaw: 0, roll: 0 };
+
+// 傾き
+export const PITCH= 0;
+export const YAW = 0;
+export const ROLL = 0;
+
+// オフセット
+export const WEAPON_POSITION_OFFSET_X_M = 0;
+export const WEAPON_POSITION_OFFSET_Y_M = 0;
+export const WEAPON_POSITION_OFFSET_Z_M = 0;
+
+// --------------------------------------------------
 // Trigger
 // --------------------------------------------------
 // 初弾を発射するトリガーの絶対位置。
@@ -30,28 +48,27 @@ export const TRIGGER_IDLE_THRESHOLD = 0.05;
 // --------------------------------------------------
 // Haptic
 // --------------------------------------------------
+export const HAPTIC_ENABLED = true;
 export const HAPTIC_INTENSITY = 0.7;
 export const HAPTIC_DURATION_MS = 40;
 
 // --------------------------------------------------
 // Tracer
 // --------------------------------------------------
+export const TRACER_ENABLED = true;
 export const TRACER_DURATION_MS = 200; // milliseconds (default:60
-export const TRACER_WIDTH = 0.001; // meters (diameter) (default:0.006)
-export const TRACER_LENGTH = 50.0; // meters (default:3.0)
-
-// --------------------------------------------------
-// DefaultWeaponPose (degrees; separate from XR grip correction and user calibration)
-// --------------------------------------------------
-export const DEFAULT_WEAPON_POSE_DEG = { pitch: 25, yaw: 0, roll: 0 };
+export const TRACER_WIDTH_M = 0.001; // meters (diameter) (default:0.006)
+export const TRACER_LENGTH_M = 50.0; // meters (default:3.0)
 
 // --------------------------------------------------
 // Muzzle Flash
 // --------------------------------------------------
+export const MUZZLE_FLASH_ENABLED = true;
 export const MUZZLE_FLASH_DURATION_MS = 75;
 export const MUZZLE_FLASH_SCALE = 6;
 
 // --------------------------------------------------
-// Gunshot新しい指示書に従う
+// Misc.
 // --------------------------------------------------
+export const DUAL_WIELD_ENABLED = false;
 export const GUNSHOT_VOLUME = 1;

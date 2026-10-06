@@ -3,7 +3,11 @@ import { Canvas } from "@react-three/fiber";
 import { createXRStore, XR, XROrigin } from "@react-three/xr";
 import { Scene } from "./components/Scene";
 import { RightHandGun } from "./xr/RightHandGun";
-import { preloadGunshot, resumeGunshotAudio } from "./shooting/gunshotAudio";
+import { MenuInputController } from "./xr/MenuInputController";
+import { SettingsMenu } from "./ui/SettingsMenu";
+import { preloadGunshot } from "./shooting/gunshotAudio";
+import { startAudioSettingsSync } from "./audio/audioManager.js";
+import { createXRAudioLifecycle } from "./audio/xrAudioLifecycle.js";
 
 const xrStore = createXRStore({
   controller: {
@@ -11,18 +15,24 @@ const xrStore = createXRStore({
     left: { rayPointer: true },
   },
 });
+const xrAudioLifecycle = createXRAudioLifecycle(xrStore);
 
 function App() {
   useEffect(() => {
+    const disconnectAudioSession = xrAudioLifecycle.connect();
+    const stopAudioSettingsSync = startAudioSettingsSync();
     void preloadGunshot();
+    return () => {
+      disconnectAudioSession();
+      stopAudioSettingsSync();
+    };
   }, []);
 
   return (
     <>
       <button
         onClick={() => {
-          void resumeGunshotAudio();
-          void xrStore.enterVR();
+          void xrAudioLifecycle.enterVR();
         }}
         style={{
           position: "absolute",
@@ -41,6 +51,8 @@ function App() {
         <XR store={xrStore}>
           <Scene />
           <XROrigin />
+          <MenuInputController />
+          <SettingsMenu />
         </XR>
       </Canvas>
     </>

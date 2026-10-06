@@ -6,8 +6,8 @@ import {
   MUZZLE_FLASH_DURATION_MS,
   MUZZLE_FLASH_SCALE,
   TRACER_DURATION_MS,
-  TRACER_LENGTH,
-  TRACER_WIDTH,
+  TRACER_LENGTH_M,
+  TRACER_WIDTH_M,
 } from "./shootingConfig.js";
 import { SHOT_RANGE } from "./shoot.js";
 
@@ -22,7 +22,7 @@ function BulletTracer({ shot }) {
   const tracer = useRef(null);
   const startedAt = useRef(null);
   const distance = shot.hit?.distance ?? SHOT_RANGE;
-  const length = Math.min(TRACER_LENGTH, distance);
+  const length = Math.min(TRACER_LENGTH_M, distance);
   const orientation = useMemo(
     () => new Quaternion().setFromUnitVectors(WORLD_UP, shot.direction),
     [shot],
@@ -43,7 +43,7 @@ function BulletTracer({ shot }) {
   return (
     <group position={shot.origin} quaternion={orientation} pointerEvents="none">
       <mesh ref={tracer} position={[0, length / 2, 0]} raycast={NO_RAYCAST}>
-        <cylinderGeometry args={[TRACER_WIDTH / 2, TRACER_WIDTH / 2, length, 6]} />
+        <cylinderGeometry args={[TRACER_WIDTH_M / 2, TRACER_WIDTH_M / 2, length, 6]} />
         <meshBasicMaterial color="white" transparent opacity={0.95} depthWrite={false} toneMapped={false} />
       </mesh>
     </group>
