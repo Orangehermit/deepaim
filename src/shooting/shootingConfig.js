@@ -64,6 +64,8 @@ export const TRACER_LENGTH_M = 50.0; // meters (default:3.0)
 // Muzzle Flash
 // --------------------------------------------------
 export const MUZZLE_FLASH_ENABLED = true;
+// マズルフラッシュを表示中に銃口へ追随させるか
+export const MUZZLE_FLASH_FOLLOW_WEAPON = true;
 export const MUZZLE_FLASH_DURATION_MS = 75;
 export const MUZZLE_FLASH_SCALE = 6;
 
