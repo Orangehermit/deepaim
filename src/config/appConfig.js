@@ -38,7 +38,7 @@ export const ENVIRONMENT_CONFIG = {
   // three.jsのscene.fogは視線方向の奥行きで計算され、頭を回すと霞が頭に追従して動いてしまうため、
   // 海のシェーダの中で、目からの実距離で計算している
   // トーンマッピング前の値として混ぜるので、見た目は目視で合わせる
-  haze: { color: "#c3d8e8", density: 0 },
+  haze: { color: "#c3d8e8", density: 0.000015 },
 
   // 遠景(岬・灯台)まで描画する距離
   cameraFar: 6000,
