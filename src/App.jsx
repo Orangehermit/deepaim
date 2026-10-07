@@ -3,6 +3,7 @@ import { Canvas } from "@react-three/fiber";
 import { createXRStore, XR, XROrigin } from "@react-three/xr";
 import { Scene } from "./components/Scene";
 import { ENVIRONMENT_CONFIG } from "./config/appConfig.js";
+import { ENV_DEBUG } from "./environment/debugFlags.js";
 import { RightHandGun } from "./xr/RightHandGun";
 import { MenuInputController } from "./xr/MenuInputController";
 import { SettingsMenu } from "./ui/SettingsMenu";
@@ -46,7 +47,7 @@ function App() {
         Enter VR
       </button>
 
-      <Canvas shadows camera={{ position: [0, 1.6, 0], fov: 50, near: 0.1, far: ENVIRONMENT_CONFIG.cameraFar }} gl={{ localClippingEnabled: true }}>
+      <Canvas shadows camera={{ position: [0, 1.6, 0], fov: 50, near: 0.1, far: ENV_DEBUG.cameraFar ?? ENVIRONMENT_CONFIG.cameraFar }} gl={{ localClippingEnabled: true }}>
         <XR store={xrStore}>
           <Scene />
           <XROrigin />

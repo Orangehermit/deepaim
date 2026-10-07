@@ -1,10 +1,11 @@
-import { useEffect, useLayoutEffect, useMemo } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { useTexture } from "@react-three/drei";
-import { PMREMGenerator, RepeatWrapping, Scene as ThreeScene } from "three";
+import { Color, PMREMGenerator, RepeatWrapping, Scene as ThreeScene } from "three";
 import { Sky as SkyMesh } from "three/addons/objects/Sky.js";
 import { ENVIRONMENT_CONFIG } from "../config/appConfig.js";
 import { getSunDirection } from "./sun.js";
+import { ENV_DEBUG } from "./debugFlags.js";
 
 const NORMAL_MAP_URL = `${import.meta.env.BASE_URL}assets/textures/waternormals.jpg`;
 const NO_RAYCAST = () => {};
@@ -70,6 +71,35 @@ function Sea() {
   const { levelY, sizeM, color, roughness, normalScale, normalTileM, scrollSpeed } =
     ENVIRONMENT_CONFIG.sea;
   const normalMap = useTexture(NORMAL_MAP_URL);
+  const { color: hazeColor, density: hazeDensity } = ENVIRONMENT_CONFIG.haze;
+  const hazeUniforms = useMemo(
+    () => ({
+      hazeColor: { value: new Color(hazeColor) },
+      hazeDensity: { value: hazeDensity },
+    }),
+    [hazeColor, hazeDensity],
+  );
+
+  // 目からの実距離(vViewPosition)で霞を混ぜる。scene.fogは視線方向の奥行きで計算されるため使わない
+  const onBeforeCompile = useCallback(
+    (shader) => {
+      shader.uniforms.hazeColor = hazeUniforms.hazeColor;
+      shader.uniforms.hazeDensity = hazeUniforms.hazeDensity;
+      shader.fragmentShader = shader.fragmentShader
+        .replace(
+          "#include <common>",
+          "#include <common>\nuniform vec3 hazeColor;\nuniform float hazeDensity;",
+        )
+        .replace(
+          "#include <opaque_fragment>",
+          `float hazeDistance = length( vViewPosition );
+          float hazeFactor = 1.0 - exp( - hazeDensity * hazeDensity * hazeDistance * hazeDistance );
+          outgoingLight = mix( outgoingLight, hazeColor, hazeFactor );
+          #include <opaque_fragment>`,
+        );
+    },
+    [hazeUniforms],
+  );
 
   useLayoutEffect(() => {
     normalMap.wrapS = RepeatWrapping;
@@ -81,6 +111,7 @@ function Sea() {
   }, [normalMap, gl, sizeM, normalTileM]);
 
   useFrame((_, delta) => {
+    if (!ENV_DEBUG.scroll) return;
     normalMap.offset.x = (normalMap.offset.x + delta * scrollSpeed[0]) % 1;
     normalMap.offset.y = (normalMap.offset.y + delta * scrollSpeed[1]) % 1;
   });
@@ -94,6 +125,7 @@ function Sea() {
         metalness={0}
         normalMap={normalMap}
         normalScale={[normalScale, normalScale]}
+        onBeforeCompile={onBeforeCompile}
       />
     </mesh>
   );
@@ -102,9 +134,9 @@ function Sea() {
 export function SkyAndSea() {
   const gl = useThree((state) => state.gl);
   const sunDirection = useMemo(() => getSunDirection(), []);
-  const { color, density } = ENVIRONMENT_CONFIG.fog;
 
   useEffect(() => {
+    if (!ENV_DEBUG.env) return undefined;
     const previous = gl.toneMappingExposure;
     gl.toneMappingExposure = ENVIRONMENT_CONFIG.toneMappingExposure;
     return () => {
@@ -112,12 +144,13 @@ export function SkyAndSea() {
     };
   }, [gl]);
 
+  if (!ENV_DEBUG.env) return null;
+
   return (
     <>
-      <fogExp2 attach="fog" args={[color, density]} />
-      <VisibleSky sunDirection={sunDirection} />
-      <SkyEnvironment sunDirection={sunDirection} />
-      <Sea />
+      {ENV_DEBUG.sky && <VisibleSky sunDirection={sunDirection} />}
+      {ENV_DEBUG.ibl && <SkyEnvironment sunDirection={sunDirection} />}
+      {ENV_DEBUG.sea && <Sea />}
     </>
   );
 }

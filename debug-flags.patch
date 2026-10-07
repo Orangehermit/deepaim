@@ -1,0 +1,92 @@
+diff --git a/src/App.jsx b/src/App.jsx
+index 90373ea..74157b4 100644
+--- a/src/App.jsx
++++ b/src/App.jsx
+@@ -3,6 +3,7 @@ import { Canvas } from "@react-three/fiber";
+ import { createXRStore, XR, XROrigin } from "@react-three/xr";
+ import { Scene } from "./components/Scene";
+ import { ENVIRONMENT_CONFIG } from "./config/appConfig.js";
++import { ENV_DEBUG } from "./environment/debugFlags.js";
+ import { RightHandGun } from "./xr/RightHandGun";
+ import { MenuInputController } from "./xr/MenuInputController";
+ import { SettingsMenu } from "./ui/SettingsMenu";
+@@ -46,7 +47,7 @@ function App() {
+         Enter VR
+       </button>
+ 
+-      <Canvas shadows camera={{ position: [0, 1.6, 0], fov: 50, near: 0.1, far: ENVIRONMENT_CONFIG.cameraFar }} gl={{ localClippingEnabled: true }}>
++      <Canvas shadows camera={{ position: [0, 1.6, 0], fov: 50, near: 0.1, far: ENV_DEBUG.cameraFar ?? ENVIRONMENT_CONFIG.cameraFar }} gl={{ localClippingEnabled: true }}>
+         <XR store={xrStore}>
+           <Scene />
+           <XROrigin />
+diff --git a/src/environment/SkyAndSea.jsx b/src/environment/SkyAndSea.jsx
+index cdb5c78..42e33d7 100644
+--- a/src/environment/SkyAndSea.jsx
++++ b/src/environment/SkyAndSea.jsx
+@@ -5,6 +5,7 @@ import { Color, PMREMGenerator, RepeatWrapping, Scene as ThreeScene } from "thre
+ import { Sky as SkyMesh } from "three/addons/objects/Sky.js";
+ import { ENVIRONMENT_CONFIG } from "../config/appConfig.js";
+ import { getSunDirection } from "./sun.js";
++import { ENV_DEBUG } from "./debugFlags.js";
+ 
+ const NORMAL_MAP_URL = `${import.meta.env.BASE_URL}assets/textures/waternormals.jpg`;
+ const NO_RAYCAST = () => {};
+@@ -110,6 +111,7 @@ function Sea() {
+   }, [normalMap, gl, sizeM, normalTileM]);
+ 
+   useFrame((_, delta) => {
++    if (!ENV_DEBUG.scroll) return;
+     normalMap.offset.x = (normalMap.offset.x + delta * scrollSpeed[0]) % 1;
+     normalMap.offset.y = (normalMap.offset.y + delta * scrollSpeed[1]) % 1;
+   });
+@@ -134,6 +136,7 @@ export function SkyAndSea() {
+   const sunDirection = useMemo(() => getSunDirection(), []);
+ 
+   useEffect(() => {
++    if (!ENV_DEBUG.env) return undefined;
+     const previous = gl.toneMappingExposure;
+     gl.toneMappingExposure = ENVIRONMENT_CONFIG.toneMappingExposure;
+     return () => {
+@@ -141,11 +144,13 @@ export function SkyAndSea() {
+     };
+   }, [gl]);
+ 
++  if (!ENV_DEBUG.env) return null;
++
+   return (
+     <>
+-      <VisibleSky sunDirection={sunDirection} />
+-      <SkyEnvironment sunDirection={sunDirection} />
+-      <Sea />
++      {ENV_DEBUG.sky && <VisibleSky sunDirection={sunDirection} />}
++      {ENV_DEBUG.ibl && <SkyEnvironment sunDirection={sunDirection} />}
++      {ENV_DEBUG.sea && <Sea />}
+     </>
+   );
+ }
+diff --git a/src/environment/debugFlags.js b/src/environment/debugFlags.js
+new file mode 100644
+index 0000000..6b56b39
+--- /dev/null
++++ b/src/environment/debugFlags.js
+@@ -0,0 +1,20 @@
++// 実機での切り分け用。URLのクエリで海・空・環境光を個別にオフにできる。
++//   ?env=0    海・空・環境光をまとめてオフ（導入前の状態との比較用）
++//   ?sky=0    見えている空だけオフ
++//   ?sea=0    海だけオフ
++//   ?ibl=0    空から作る環境光だけオフ
++//   ?scroll=0 海の法線スクロールだけ止める
++//   ?far=1000 カメラのfar値を上書き
++// 例: https://.../deepaim/?env=0&v=2
++const params = new URLSearchParams(window.location.search);
++const isOn = (name) => params.get(name) !== "0";
++const farOverride = Number(params.get("far"));
++
++export const ENV_DEBUG = {
++  env: isOn("env"),
++  sky: isOn("sky"),
++  sea: isOn("sea"),
++  ibl: isOn("ibl"),
++  scroll: isOn("scroll"),
++  cameraFar: farOverride > 0 ? farOverride : null,
++};
