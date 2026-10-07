@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { useTexture } from "@react-three/drei";
 import { Color, PMREMGenerator, RepeatWrapping, Scene as ThreeScene } from "three";
@@ -39,7 +39,7 @@ function VisibleSky({ sunDirection }) {
 
 // 空だけを入れた別シーンからPMREMを作り、scene.environment に設定する。
 // 太陽が固定なので最初の1回だけ生成する。
-function SkyEnvironment({ sunDirection }) {
+function SkyEnvironment({ sunDirection, onEnvMapChange }) {
   const gl = useThree((state) => state.gl);
   const scene = useThree((state) => state.scene);
 
@@ -54,21 +54,23 @@ function SkyEnvironment({ sunDirection }) {
 
     scene.environment = target.texture;
     scene.environmentIntensity = ENVIRONMENT_CONFIG.environmentIntensity;
+    onEnvMapChange(target.texture);
 
     return () => {
       if (scene.environment === target.texture) scene.environment = null;
+      onEnvMapChange(null);
       target.dispose();
       disposeSky(sky);
     };
-  }, [gl, scene, sunDirection]);
+  }, [gl, scene, sunDirection, onEnvMapChange]);
 
   return null;
 }
 
 // 海。遠景専用なので平面反射は持たず、環境反射(空の映り込み)と弱い法線の揺らぎだけ。
-function Sea() {
+function Sea({ envMap }) {
   const gl = useThree((state) => state.gl);
-  const { levelY, sizeM, color, roughness, normalScale, normalTileM, scrollSpeed } =
+  const { levelY, sizeM, color, roughness, envMapIntensity, normalScale, normalTileM, scrollSpeed } =
     ENVIRONMENT_CONFIG.sea;
   const normalMap = useTexture(NORMAL_MAP_URL);
   const { color: hazeColor, density: hazeDensity } = ENVIRONMENT_CONFIG.haze;
@@ -123,6 +125,8 @@ function Sea() {
         color={color}
         roughness={roughness}
         metalness={0}
+        envMap={envMap}
+        envMapIntensity={envMapIntensity}
         normalMap={normalMap}
         normalScale={[normalScale, normalScale]}
         onBeforeCompile={onBeforeCompile}
@@ -134,6 +138,8 @@ function Sea() {
 export function SkyAndSea() {
   const gl = useThree((state) => state.gl);
   const sunDirection = useMemo(() => getSunDirection(), []);
+  // 海の映り込みを空と同じ明るさにするため、環境マップを海のマテリアルにも直接渡す
+  const [envMap, setEnvMap] = useState(null);
 
   useEffect(() => {
     if (!ENV_DEBUG.env) return undefined;
@@ -149,8 +155,8 @@ export function SkyAndSea() {
   return (
     <>
       {ENV_DEBUG.sky && <VisibleSky sunDirection={sunDirection} />}
-      {ENV_DEBUG.ibl && <SkyEnvironment sunDirection={sunDirection} />}
-      {ENV_DEBUG.sea && <Sea />}
+      {ENV_DEBUG.ibl && <SkyEnvironment sunDirection={sunDirection} onEnvMapChange={setEnvMap} />}
+      {ENV_DEBUG.sea && <Sea envMap={envMap} />}
     </>
   );
 }
