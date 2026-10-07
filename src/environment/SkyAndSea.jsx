@@ -6,6 +6,7 @@ import { Sky as SkyMesh } from "three/addons/objects/Sky.js";
 import { ENVIRONMENT_CONFIG } from "../config/appConfig.js";
 import { getSunDirection } from "./sun.js";
 import { ENV_DEBUG } from "./debugFlags.js";
+import { RollMeter } from "./RollMeter.jsx";
 
 const NORMAL_MAP_URL = `${import.meta.env.BASE_URL}assets/textures/waternormals.jpg`;
 const NO_RAYCAST = () => {};
@@ -119,7 +120,7 @@ function Sea({ envMap }) {
   });
 
   return (
-    <mesh name="Sea" rotation-x={-Math.PI / 2} position-y={levelY} raycast={NO_RAYCAST}>
+    <mesh name="Sea" rotation-x={-Math.PI / 2} position-y={ENV_DEBUG.seaLevelY ?? levelY} raycast={NO_RAYCAST}>
       <planeGeometry args={[sizeM, sizeM]} />
       <meshStandardMaterial
         color={color}
@@ -150,13 +151,14 @@ export function SkyAndSea() {
     };
   }, [gl]);
 
-  if (!ENV_DEBUG.env) return null;
+  if (!ENV_DEBUG.env) return ENV_DEBUG.roll ? <RollMeter /> : null;
 
   return (
     <>
       {ENV_DEBUG.sky && <VisibleSky sunDirection={sunDirection} />}
       {ENV_DEBUG.ibl && <SkyEnvironment sunDirection={sunDirection} onEnvMapChange={setEnvMap} />}
       {ENV_DEBUG.sea && <Sea envMap={envMap} />}
+      {ENV_DEBUG.roll && <RollMeter />}
     </>
   );
 }
