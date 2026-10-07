@@ -46,8 +46,6 @@ function App() {
       </button>
 
       <Canvas shadows camera={{ position: [0, 1.6, 0], fov: 50 }} gl={{ localClippingEnabled: true }}>
-        <color attach="background" args={["#ececec"]} />
-
         <XR store={xrStore}>
           <Scene />
           <XROrigin />
