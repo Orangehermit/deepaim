@@ -21,7 +21,7 @@ export const ENVIRONMENT_CONFIG = {
   toneMappingExposure: 0.5,
 
   sea: {
-    levelY: -100, // 崖1の底面(y=-101)より1m上。崖と海面の継ぎ目が隠れる
+    levelY: -300, // 崖1の底面(y=-101)より1m上。崖と海面の継ぎ目が隠れる
     sizeM: 12000, // 一辺。フォグで消えるまでの距離より大きくする
     color: "#1f5d80",
     roughness: 0.12,
