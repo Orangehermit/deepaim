@@ -7,6 +7,7 @@ import { ENVIRONMENT_CONFIG } from "../config/appConfig.js";
 import { getSunDirection } from "./sun.js";
 import { ENV_DEBUG } from "./debugFlags.js";
 import { RollMeter } from "./RollMeter.jsx";
+import { CliffTest } from "./CliffTest.jsx";
 
 const NORMAL_MAP_URL = `${import.meta.env.BASE_URL}assets/textures/waternormals.jpg`;
 const NO_RAYCAST = () => {};
@@ -151,14 +152,21 @@ export function SkyAndSea() {
     };
   }, [gl]);
 
-  if (!ENV_DEBUG.env) return ENV_DEBUG.roll ? <RollMeter /> : null;
+  const debugTools = (
+    <>
+      {ENV_DEBUG.roll && <RollMeter />}
+      {ENV_DEBUG.cliffTest && <CliffTest />}
+    </>
+  );
+
+  if (!ENV_DEBUG.env) return debugTools;
 
   return (
     <>
       {ENV_DEBUG.sky && <VisibleSky sunDirection={sunDirection} />}
       {ENV_DEBUG.ibl && <SkyEnvironment sunDirection={sunDirection} onEnvMapChange={setEnvMap} />}
       {ENV_DEBUG.sea && <Sea envMap={envMap} />}
-      {ENV_DEBUG.roll && <RollMeter />}
+      {debugTools}
     </>
   );
 }

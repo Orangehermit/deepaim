@@ -1,0 +1,93 @@
+diff --git a/src/config/appConfig.js b/src/config/appConfig.js
+index e7c2074..b4d2755 100644
+--- a/src/config/appConfig.js
++++ b/src/config/appConfig.js
+@@ -29,6 +29,9 @@ export const ENVIRONMENT_CONFIG = {
+     // 水平線で見えている空と同じ明るさになり、海と空の境目が溶け合う
+     envMapIntensity: 1,
+     normalScale: 0.15, // 波の強さ。穏やかな海なら小さく
++    // 法線マップを大きさの違う3段で重ねる。細かい波は遠くで平均化されて消えるので、
++    // 遠景の海にも模様が残るよう、大きなうねりの段を足している（1より小さい値ほど大きなうねり）
++    detail: { scales: [1, 0.22, 0.05], weights: [1, 1.2, 1.5] },
+     normalTileM: 60, // 法線マップ1枚が覆う実寸
+     scrollSpeed: [0.004, 0.0015], // UV/秒
+   },
+diff --git a/src/environment/SkyAndSea.jsx b/src/environment/SkyAndSea.jsx
+index da01211..2da95f8 100644
+--- a/src/environment/SkyAndSea.jsx
++++ b/src/environment/SkyAndSea.jsx
+@@ -72,8 +72,12 @@ function SkyEnvironment({ sunDirection, onEnvMapChange }) {
+ // 海。遠景専用なので平面反射は持たず、環境反射(空の映り込み)と弱い法線の揺らぎだけ。
+ function Sea({ envMap }) {
+   const gl = useThree((state) => state.gl);
+-  const { levelY, sizeM, color, roughness, envMapIntensity, normalScale, normalTileM, scrollSpeed } =
++  const { levelY, sizeM, color, roughness, envMapIntensity, normalTileM, scrollSpeed, detail } =
+     ENVIRONMENT_CONFIG.sea;
++  const normalScale = ENV_DEBUG.normalScale ?? ENVIRONMENT_CONFIG.sea.normalScale;
++  // ?ms=0 のときは1段目だけを使う
++  const scales = ENV_DEBUG.multiScale ? detail.scales : [detail.scales[0], 1, 1];
++  const weights = ENV_DEBUG.multiScale ? detail.weights : [detail.weights[0], 0, 0];
+   const normalMap = useTexture(NORMAL_MAP_URL);
+   const { color: hazeColor, density: hazeDensity } = ENVIRONMENT_CONFIG.haze;
+   const hazeUniforms = useMemo(
+@@ -89,7 +93,21 @@ function Sea({ envMap }) {
+     (shader) => {
+       shader.uniforms.hazeColor = hazeUniforms.hazeColor;
+       shader.uniforms.hazeDensity = hazeUniforms.hazeDensity;
++      const f = (n) => n.toFixed(4);
+       shader.fragmentShader = shader.fragmentShader
++        .replace(
++          "#include <normal_fragment_maps>",
++          `#ifdef USE_NORMALMAP_TANGENTSPACE
++            vec3 mapN1 = texture2D( normalMap, vNormalMapUv * ${f(scales[0])} ).xyz * 2.0 - 1.0;
++            vec3 mapN2 = texture2D( normalMap, vNormalMapUv * ${f(scales[1])} + vec2( 0.31, 0.77 ) ).xyz * 2.0 - 1.0;
++            vec3 mapN3 = texture2D( normalMap, vNormalMapUv * ${f(scales[2])} + vec2( 0.58, 0.12 ) ).xyz * 2.0 - 1.0;
++            vec3 mapN = vec3(
++              mapN1.xy * ${f(weights[0])} + mapN2.xy * ${f(weights[1])} + mapN3.xy * ${f(weights[2])},
++              mapN1.z );
++            mapN.xy *= normalScale;
++            normal = normalize( tbn * mapN );
++          #endif`,
++        )
+         .replace(
+           "#include <common>",
+           "#include <common>\nuniform vec3 hazeColor;\nuniform float hazeDensity;",
+@@ -102,7 +120,7 @@ function Sea({ envMap }) {
+           #include <opaque_fragment>`,
+         );
+     },
+-    [hazeUniforms],
++    [hazeUniforms, scales, weights],
+   );
+ 
+   useLayoutEffect(() => {
+diff --git a/src/environment/debugFlags.js b/src/environment/debugFlags.js
+index 949d667..8b0afbf 100644
+--- a/src/environment/debugFlags.js
++++ b/src/environment/debugFlags.js
+@@ -7,6 +7,8 @@
+ //   ?far=1000 カメラのfar値を上書き
+ //   ?seaY=-20 海面の高さ(m)を上書き。崖が低い場合の見え方を、モデルを作り直さずに試せる
+ //   ?cliff=circle&cliffR=25  崖1を、立ち位置中心の円(半径25m)の平面に差し替え（square=正方形）
++//   ?ms=0     海の法線を1段だけにする（遠景のうねりを足す前との比較用）
++//   ?nscale=0.3 海の波の強さ(normalScale)を上書き
+ //   ?roll=1   頭のロール角を目の前に数値表示（切り分け用。これだけは指定したときだけ表示）
+ // 例: https://.../deepaim/?env=0&v=2
+ const params = new URLSearchParams(window.location.search);
+@@ -14,6 +16,7 @@ const isOn = (name) => params.get(name) !== "0";
+ const farOverride = Number(params.get("far"));
+ const cliffParam = params.get("cliff");
+ const cliffSize = Number(params.get("cliffR"));
++const nscaleOverride = Number(params.get("nscale"));
+ const seaYParam = params.get("seaY");
+ const seaYOverride = seaYParam !== null && seaYParam !== "" ? Number(seaYParam) : NaN;
+ 
+@@ -25,6 +28,8 @@ export const ENV_DEBUG = {
+   scroll: isOn("scroll"),
+   cameraFar: farOverride > 0 ? farOverride : null,
+   seaLevelY: Number.isFinite(seaYOverride) ? seaYOverride : null,
++  multiScale: isOn("ms"),
++  normalScale: nscaleOverride > 0 ? nscaleOverride : null,
+   roll: params.get("roll") === "1",
+   cliffTest:
+     cliffParam === "circle" || cliffParam === "square"

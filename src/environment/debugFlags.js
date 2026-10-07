@@ -6,11 +6,14 @@
 //   ?scroll=0 海の法線スクロールだけ止める
 //   ?far=1000 カメラのfar値を上書き
 //   ?seaY=-20 海面の高さ(m)を上書き。崖が低い場合の見え方を、モデルを作り直さずに試せる
+//   ?cliff=circle&cliffR=25  崖1を、立ち位置中心の円(半径25m)の平面に差し替え（square=正方形）
 //   ?roll=1   頭のロール角を目の前に数値表示（切り分け用。これだけは指定したときだけ表示）
 // 例: https://.../deepaim/?env=0&v=2
 const params = new URLSearchParams(window.location.search);
 const isOn = (name) => params.get(name) !== "0";
 const farOverride = Number(params.get("far"));
+const cliffParam = params.get("cliff");
+const cliffSize = Number(params.get("cliffR"));
 const seaYParam = params.get("seaY");
 const seaYOverride = seaYParam !== null && seaYParam !== "" ? Number(seaYParam) : NaN;
 
@@ -23,4 +26,8 @@ export const ENV_DEBUG = {
   cameraFar: farOverride > 0 ? farOverride : null,
   seaLevelY: Number.isFinite(seaYOverride) ? seaYOverride : null,
   roll: params.get("roll") === "1",
+  cliffTest:
+    cliffParam === "circle" || cliffParam === "square"
+      ? { shape: cliffParam, size: cliffSize > 0 ? cliffSize : 25 }
+      : null,
 };
