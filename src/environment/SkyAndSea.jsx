@@ -72,8 +72,12 @@ function SkyEnvironment({ sunDirection, onEnvMapChange }) {
 // 海。遠景専用なので平面反射は持たず、環境反射(空の映り込み)と弱い法線の揺らぎだけ。
 function Sea({ envMap }) {
   const gl = useThree((state) => state.gl);
-  const { levelY, sizeM, color, roughness, envMapIntensity, normalScale, normalTileM, scrollSpeed } =
+  const { levelY, sizeM, color, roughness, envMapIntensity, normalTileM, scrollSpeed, detail } =
     ENVIRONMENT_CONFIG.sea;
+  const normalScale = ENV_DEBUG.normalScale ?? ENVIRONMENT_CONFIG.sea.normalScale;
+  // ?ms=0 のときは1段目だけを使う
+  const scales = ENV_DEBUG.multiScale ? detail.scales : [detail.scales[0], 1, 1];
+  const weights = ENV_DEBUG.multiScale ? detail.weights : [detail.weights[0], 0, 0];
   const normalMap = useTexture(NORMAL_MAP_URL);
   const { color: hazeColor, density: hazeDensity } = ENVIRONMENT_CONFIG.haze;
   const hazeUniforms = useMemo(
@@ -89,7 +93,21 @@ function Sea({ envMap }) {
     (shader) => {
       shader.uniforms.hazeColor = hazeUniforms.hazeColor;
       shader.uniforms.hazeDensity = hazeUniforms.hazeDensity;
+      const f = (n) => n.toFixed(4);
       shader.fragmentShader = shader.fragmentShader
+        .replace(
+          "#include <normal_fragment_maps>",
+          `#ifdef USE_NORMALMAP_TANGENTSPACE
+            vec3 mapN1 = texture2D( normalMap, vNormalMapUv * ${f(scales[0])} ).xyz * 2.0 - 1.0;
+            vec3 mapN2 = texture2D( normalMap, vNormalMapUv * ${f(scales[1])} + vec2( 0.31, 0.77 ) ).xyz * 2.0 - 1.0;
+            vec3 mapN3 = texture2D( normalMap, vNormalMapUv * ${f(scales[2])} + vec2( 0.58, 0.12 ) ).xyz * 2.0 - 1.0;
+            vec3 mapN = vec3(
+              mapN1.xy * ${f(weights[0])} + mapN2.xy * ${f(weights[1])} + mapN3.xy * ${f(weights[2])},
+              mapN1.z );
+            mapN.xy *= normalScale;
+            normal = normalize( tbn * mapN );
+          #endif`,
+        )
         .replace(
           "#include <common>",
           "#include <common>\nuniform vec3 hazeColor;\nuniform float hazeDensity;",
@@ -102,7 +120,7 @@ function Sea({ envMap }) {
           #include <opaque_fragment>`,
         );
     },
-    [hazeUniforms],
+    [hazeUniforms, scales, weights],
   );
 
   useLayoutEffect(() => {
