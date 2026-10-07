@@ -1,0 +1,38 @@
+// --------------------------------------------------
+// Environment (Sky & Sea)
+// --------------------------------------------------
+// 単位はすべてメートル。座標系は base.glb に合わせている
+// （プレイヤーは原点、正面が -Z、右が +X、崖1の底面が y=-101）。
+export const ENVIRONMENT_CONFIG = {
+  // 太陽の向き（空・環境光・ディレクショナルライトの共通の基準）
+  // azimuthDeg: 真上から見た向き。0°=背後(+Z)、90°=右(+X)、180°=正面(-Z)
+  // elevationDeg: 水平線からの高さ
+  // 正面寄りにすると海のきらめきが見えるが、標的が逆光になる
+  sun: { azimuthDeg: 120, elevationDeg: 35 },
+
+  // 空（three/addons の Sky のパラメータ）
+  sky: { turbidity: 4, rayleigh: 1.5, mieCoefficient: 0.005, mieDirectionalG: 0.8 },
+
+  // 空から作る環境光(IBL)の強さ。既存の hemisphereLight に上乗せされる
+  environmentIntensity: 0.5,
+
+  // 全体の露出。Skyは明るいので three.js 公式サンプルに倣って0.5から始める
+  // （施設などのモデルも暗くなるので、ライトと合わせて調整する）
+  toneMappingExposure: 0.5,
+
+  sea: {
+    levelY: -100, // 崖1の底面(y=-101)より1m上。崖と海面の継ぎ目が隠れる
+    sizeM: 12000, // 一辺。フォグで消えるまでの距離より大きくする
+    color: "#1f5d80",
+    roughness: 0.12,
+    normalScale: 0.15, // 波の強さ。穏やかな海なら小さく
+    normalTileM: 60, // 法線マップ1枚が覆う実寸
+    scrollSpeed: [0.004, 0.0015], // UV/秒
+  },
+
+  // フォグの色は水平線付近の空の色に合わせる（海の端の継ぎ目を消す）
+  fog: { color: "#c3d8e8", density: 0.00028 },
+
+  // 遠景(岬・灯台)まで描画する距離
+  cameraFar: 6000,
+};
