@@ -112,7 +112,7 @@ export function RightHandGun() {
           </group>
         </group>
       </XRSpace>
-      {createPortal(<ShotEffects shot={shot} />, scene)}
+      {createPortal(<ShotEffects shot={shot} muzzle={muzzle} />, scene)}
     </>
   );
 }

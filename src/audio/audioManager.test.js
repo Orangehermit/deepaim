@@ -134,7 +134,7 @@ test("preload/settings never autoplay; unlock starts resume and media play in th
   assert.deepEqual(h.events, ["resume", "play"]);
   assert.equal(h.media.src, BGM_TRACKS[0].src);
   assert.equal(h.media.loop, true);
-  assert.match(h.media.src, /assets\/audio\/bgm\/observation_zero\.mp3$/);
+  assert.match(h.media.src, /assets\/audio\/bgm\/observation_zero\.ogg$/);
   pending.resolve();
   await unlocked;
 });

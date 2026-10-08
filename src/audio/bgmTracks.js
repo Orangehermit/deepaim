@@ -4,6 +4,6 @@ const ASSET_BASE = import.meta.env?.BASE_URL ?? "/";
 export const BGM_TRACKS = [
   {
     id: "observation_zero",
-    src: `${ASSET_BASE}assets/audio/bgm/observation_zero.mp3`,
+    src: `${ASSET_BASE}assets/audio/bgm/observation_zero.ogg`,
   },
 ];

@@ -148,7 +148,7 @@ shifted to zero internally so native snapping follows the buttons' lower-bound
 grid. Step buttons clamp at the bounds without changing Draft there.
 
 `src/audio/bgmTracks.js` holds `{ id, src }` track objects with Vite's `BASE_URL`.
-The first entry is `assets/audio/bgm/observation_zero.mp3`. Add future tracks
+The first entry is `assets/audio/bgm/observation_zero.ogg`. Add future tracks
 there; this implementation selects the first track and centralizes `loop = true`
 in `src/audio/audioManager.js`, without random selection or playlist controls.
 The BGM player streams one stable HTMLAudioElement through one
@@ -291,9 +291,13 @@ rotation and the XR controller's targeting ray do not define the shot direction.
 
 A blue target, 40 cm in diameter, sits at `[0, 1.5, -3]`. A hit turns it red;
 it stays visible and red until the page reloads. The tracer travels toward the
-hit or maximum range in about 60 ms. The flash lasts about 45 ms. Both effects
-use the firing-time muzzle position and direction, so moving the controller
-afterward does not move them. The old orange `DebugShotRay` remains in the
+hit or maximum range using `TRACER_DURATION_MS` and keeps the firing-time
+world-space origin and direction. The flash lasts 75 ms with its existing asset,
+scale, and one random roll per shot. `MUZZLE_FLASH_FOLLOW_WEAPON` in
+`shootingConfig.js` defaults to `true`: while visible, only the flash follows
+`Muzzle_Point`'s current world position and rotation. Set it to `false` to keep
+the original flash fixed at the firing-time position and shot orientation.
+The old orange `DebugShotRay` remains in the
 repository for troubleshooting but is not rendered during normal firing.
 
 The right controller model and standard pointer are absent; its gun muzzle UI

@@ -4,6 +4,7 @@ import { useGLTF } from "@react-three/drei";
 import { Quaternion, Vector3 } from "three";
 import {
   MUZZLE_FLASH_DURATION_MS,
+  MUZZLE_FLASH_FOLLOW_WEAPON,
   MUZZLE_FLASH_SCALE,
   TRACER_DURATION_MS,
   TRACER_LENGTH_M,
@@ -50,7 +51,7 @@ function BulletTracer({ shot }) {
   );
 }
 
-export function MuzzleFlash({ shot }) {
+export function MuzzleFlash({ shot, muzzle }) {
   const flash = useRef(null);
   const startedAt = useRef(null);
   const { scene } = useGLTF(MUZZLE_FLASH_URL);
@@ -62,18 +63,30 @@ export function MuzzleFlash({ shot }) {
     return instance;
   }, [scene]);
   const position = useMemo(() => shot.origin.clone(), [shot]);
+  // Keep one local roll offset for the entire shot, including follow updates.
+  const roll = useMemo(
+    () => new Quaternion().setFromAxisAngle(LOCAL_FORWARD, Math.random() * Math.PI * 2),
+    [shot],
+  );
   const orientation = useMemo(() => {
-    const base = new Quaternion().setFromUnitVectors(LOCAL_FORWARD, shot.direction);
-    const roll = new Quaternion().setFromAxisAngle(LOCAL_FORWARD, Math.random() * Math.PI * 2);
-    // Local roll leaves the forward axis aligned with the shot direction.
+    const base = MUZZLE_FLASH_FOLLOW_WEAPON && muzzle != null
+      ? muzzle.getWorldQuaternion(new Quaternion())
+      : new Quaternion().setFromUnitVectors(LOCAL_FORWARD, shot.direction);
+    // The disabled mode retains the original firing-time shot orientation.
     return base.multiply(roll);
-  }, [shot]);
+  }, [shot, muzzle, roll]);
 
   useFrame(({ clock }) => {
     if (flash.current == null || !flash.current.visible) return;
     if (startedAt.current == null) startedAt.current = clock.elapsedTime;
     if ((clock.elapsedTime - startedAt.current) * 1000 >= MUZZLE_FLASH_DURATION_MS) {
       flash.current.visible = false;
+      return;
+    }
+    if (MUZZLE_FLASH_FOLLOW_WEAPON && muzzle != null) {
+      muzzle.getWorldPosition(flash.current.position);
+      muzzle.getWorldQuaternion(flash.current.quaternion);
+      flash.current.quaternion.multiply(roll);
     }
   });
 
@@ -84,11 +97,11 @@ export function MuzzleFlash({ shot }) {
   );
 }
 
-export function ShotEffects({ shot }) {
+export function ShotEffects({ shot, muzzle }) {
   return shot == null ? null : (
     <>
       <BulletTracer key={`tracer-${shot.id}`} shot={shot} />
-      <MuzzleFlash key={`flash-${shot.id}`} shot={shot} />
+      <MuzzleFlash key={`flash-${shot.id}`} shot={shot} muzzle={muzzle} />
     </>
   );
 }
