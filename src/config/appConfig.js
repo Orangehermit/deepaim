@@ -28,7 +28,7 @@ export const ENVIRONMENT_CONFIG = {
     // 海の空の映り込みの強さ。scene.environmentIntensityとは別に持たせ、1にすると
     // 水平線で見えている空と同じ明るさになり、海と空の境目が溶け合う
     envMapIntensity: 1,
-    normalScale: 0, // 波の強さ。穏やかな海なら小さく defalt:0.15
+    normalScale: 0.08, // 波の強さ。穏やかな海なら小さく defalt:0.15
     // 法線マップを大きさの違う3段で重ねる。細かい波は遠くで平均化されて消えるので、
     // 遠景の海にも模様が残るよう、大きなうねりの段を足している（1より小さい値ほど大きなうねり）
     detail: { scales: [1, 0.22, 0.05], weights: [1, 1.2, 1.5] },
@@ -44,5 +44,5 @@ export const ENVIRONMENT_CONFIG = {
   haze: { color: "#c3d8e8", density: 0.000015 },
 
   // 遠景(岬・灯台)まで描画する距離
-  cameraFar: 1000, // default:6000
+  cameraFar: 6000, // default:6000
 };
